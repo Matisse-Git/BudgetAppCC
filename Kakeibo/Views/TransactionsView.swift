@@ -19,9 +19,9 @@ struct TransactionsView: View {
                     Text(search.isEmpty ? "No entries yet. Tap + on Home to add one." : "No matches.")
                         .foregroundStyle(.secondary)
                 }
-                ForEach(days, id: \.0) { day, items in
+                ForEach(days) { group in
                     Section {
-                        ForEach(items) { entry in
+                        ForEach(group.entries) { entry in
                             Button {
                                 editing = entry
                             } label: {
@@ -36,7 +36,7 @@ struct TransactionsView: View {
                             }
                         }
                     } header: {
-                        Text(day.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).year()))
+                        Text(group.day.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).year()))
                     }
                 }
             }
@@ -65,11 +65,17 @@ struct TransactionsView: View {
         }
     }
 
-    private func grouped(_ items: [Entry]) -> [(Date, [Entry])] {
+    private func grouped(_ items: [Entry]) -> [DayGroup] {
         let calendar = Calendar.kakeibo
         let groups = Dictionary(grouping: items) { calendar.startOfDay(for: $0.date) }
         return groups
-            .map { ($0.key, $0.value.sorted { $0.date > $1.date }) }
-            .sorted { $0.0 > $1.0 }
+            .map { DayGroup(day: $0.key, entries: $0.value.sorted { $0.date > $1.date }) }
+            .sorted { $0.day > $1.day }
     }
+}
+
+private struct DayGroup: Identifiable {
+    let day: Date
+    let entries: [Entry]
+    var id: Date { day }
 }

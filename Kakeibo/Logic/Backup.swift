@@ -133,9 +133,9 @@ enum Backup {
             exportedAt: Date(),
             defaultAccountID: UserDefaults.standard.string(forKey: SettingsKey.defaultAccountID),
             partnerName: UserDefaults.standard.string(forKey: SettingsKey.partnerName),
-            accounts: try context.fetch(FetchDescriptor<Account>()).map(AccountRecord.init),
-            categories: try context.fetch(FetchDescriptor<BudgetCategory>()).map(CategoryRecord.init),
-            entries: try context.fetch(FetchDescriptor<Entry>()).map(EntryRecord.init)
+            accounts: try context.fetch(FetchDescriptor<Account>()).map { AccountRecord($0) },
+            categories: try context.fetch(FetchDescriptor<BudgetCategory>()).map { CategoryRecord($0) },
+            entries: try context.fetch(FetchDescriptor<Entry>()).map { EntryRecord($0) }
         )
         let url = FileManager.default.temporaryDirectory.appending(path: "Kakeibo-backup-\(stamp).json")
         try encoder.encode(file).write(to: url, options: .atomic)

@@ -102,7 +102,6 @@ enum PendingAction {
 /// the Action Button and Shortcuts.
 struct OpenAddEntryIntent: AppIntent {
     static let title: LocalizedStringResource = "Add Kakeibo Entry"
-    static let description = IntentDescription("Opens Kakeibo ready to add an expense or income.")
     static let openAppWhenRun: Bool = true
 
     @MainActor

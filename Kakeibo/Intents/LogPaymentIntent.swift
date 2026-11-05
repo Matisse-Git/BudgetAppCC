@@ -32,7 +32,6 @@ enum QuickLog {
 /// pass the automation's Amount, Merchant and Card. Entries are flagged for review.
 struct LogPaymentIntent: AppIntent {
     static let title: LocalizedStringResource = "Log Payment"
-    static let description = IntentDescription("Adds an expense to Kakeibo, for example from a Wallet transaction automation. The entry is marked for review.")
 
     @Parameter(title: "Amount")
     var amount: String?
