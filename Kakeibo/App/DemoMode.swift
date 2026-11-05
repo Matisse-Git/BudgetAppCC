@@ -20,6 +20,14 @@ struct DemoScreen: View {
     @Query(sort: \Account.sortOrder) private var accounts: [Account]
 
     var body: some View {
+        if name == "edit-home" {
+            EditHomeView(order: .constant(HomeSection.defaultOrder), hidden: .constant(""))
+        } else {
+            screens
+        }
+    }
+
+    private var screens: some View {
         NavigationStack {
             switch name {
             case "card":
@@ -42,7 +50,7 @@ struct DemoScreen: View {
         }
     }
 
-    static let standalone: Set<String> = ["card", "partner", "settings", "categories", "review"]
+    static let standalone: Set<String> = ["card", "partner", "settings", "categories", "review", "edit-home"]
 }
 
 enum DemoData {
@@ -98,6 +106,33 @@ enum DemoData {
         add(.expense, 22_600, date(lastMonth, 9), from: "SMBC Olive credit", category: "Supermarket", merchant: "Seijo Ishii")
         add(.expense, 4_980, date(lastMonth, 15), from: "SMBC Olive credit", category: "Phone", note: "Rakuten Mobile")
         add(.expense, 6_200, date(lastMonth, 27), from: "Paidy", category: "Shopping", merchant: "Amazon")
+
+        // Earlier months, paid from the bank and covered by that month's salary, so the
+        // charts have some history without changing today's balances.
+        let history: [(back: Int, total: Int)] = [(5, 176_200), (4, 191_400), (3, 204_900), (2, 183_100), (1, 188_400)]
+        let fillers: [(day: Int, category: String, merchant: String, weight: Int)] = [
+            (3, "Supermarket", "Life", 9), (6, "Restaurants", "Sukiya", 5), (8, "Konbini", "Lawson", 2),
+            (11, "Supermarket", "Seijo Ishii", 8), (14, "Transport", "", 4), (17, "Restaurants", "Ichiran", 6),
+            (20, "Shopping", "Muji", 7), (23, "Supermarket", "Life", 9), (26, "Konbini", "FamilyMart", 2),
+            (28, "Other", "", 3),
+        ]
+        let weightSum = fillers.reduce(0) { $0 + $1.weight }
+        for month in history {
+            guard let start = calendar.date(byAdding: .month, value: -month.back, to: thisMonth) else { continue }
+            // Last month already holds 78,130 of card purchases (my share).
+            let rest = month.total - 82_000 - (month.back == 1 ? 78_130 : 0)
+            add(.expense, 82_000, date(start, 1, hour: 9), from: "SMBC bank", category: "Rent")
+            var paid = 82_000
+            var used = 0
+            for (index, filler) in fillers.enumerated() {
+                let amount = index == fillers.count - 1 ? rest - used : rest * filler.weight / weightSum
+                used += amount
+                paid += amount
+                add(.expense, amount, date(start, filler.day, hour: 19), from: "SMBC bank",
+                    category: filler.category, merchant: filler.merchant)
+            }
+            add(.income, paid, date(start, 25, hour: 10), from: "SMBC bank", category: "Salary")
+        }
 
         // This month.
         add(.expense, 82_000, date(thisMonth, 1, hour: 9), from: "SMBC bank", category: "Rent")

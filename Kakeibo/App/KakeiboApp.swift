@@ -33,15 +33,18 @@ struct RootView: View {
 
     private var tabs: some View {
         TabView(selection: $tab) {
-            HomeView(showAdd: $showAdd)
+            HomeView(showAdd: $showAdd, tab: $tab)
                 .tabItem { Label("Home", systemImage: "house") }
                 .tag(0)
             TransactionsView()
-                .tabItem { Label("Transactions", systemImage: "list.bullet") }
+                .tabItem { Label("Activity", systemImage: "list.bullet") }
                 .tag(1)
+            BudgetsView()
+                .tabItem { Label("Budgets", systemImage: "chart.pie") }
+                .tag(2)
             AccountsView()
                 .tabItem { Label("Accounts", systemImage: "creditcard") }
-                .tag(2)
+                .tag(3)
         }
         .sheet(isPresented: $showAdd) {
             EntryEditorView(mode: .new)
@@ -98,7 +101,8 @@ struct RootView: View {
         setupDone = screen != "setup"
         showSetup = screen == "setup"
         showAdd = screen == "add"
-        tab = screen == "transactions" ? 1 : (screen == "accounts" ? 2 : 0)
+        let tabs = ["transactions": 1, "budgets": 2, "accounts": 3]
+        tab = tabs[screen] ?? 0
         Maintenance.run(context, autoPayoffs: false)
     }
 }

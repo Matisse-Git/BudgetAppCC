@@ -99,3 +99,21 @@ These decisions were agreed before any code was written. Update this file when a
 - Sharing a joint account and its budget with my partner via CloudKit sharing. Accounts are the
   sharing unit (`Account.shareScope` is reserved for this).
 - Other currencies (`currencyCode` exists on accounts and entries), payday-based months, Face ID lock.
+
+## Look and layout (v1.1 redesign)
+
+- Designed dark-first but follows the phone's light or dark setting. Apple system colours and type, calm cards. Line icons (SF Symbols) instead of emoji; categories
+  without a matching icon keep their emoji.
+- Colour means something: Rent, Supermarket, Shopping and Restaurants get their own hue, other categories are
+  grey ("Everything else" in charts). Red means over budget or short of money; orange means a bill is close.
+- Tabs: Home, Activity, Budgets, Accounts.
+- **Home**: the month's spending as one big number, the yen left and a per-day allowance, then a line chart of
+  spending so far against last month and the budget (drag to read any day). Quick actions: Add, Transfer,
+  Settle up, Review. Below that, Upcoming bills, Recent, Budgets (the three that most need a look) and the
+  partner balance. **Edit Home** reorders or hides those four sections (`homeSectionOrder`,
+  `homeHiddenSections`). The month is changed with the arrows at the top; swiping no longer changes it,
+  because a horizontal drag now reads the chart.
+- **Budgets**: this month split by category on one bar, the last six months against the budget, and every
+  category's progress.
+- **Accounts**: money available and what's left after card bills, credit cards as swipeable cards, other
+  accounts in a list.

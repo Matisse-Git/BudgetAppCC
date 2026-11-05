@@ -8,35 +8,62 @@ struct AccountsView: View {
 
     var body: some View {
         let ledger = Ledger(accounts: accounts, entries: entries)
+        let active = accounts.filter { !$0.isArchived }
+        let cards = active.filter { $0.kind == .credit }
+        let money = active.filter { $0.kind != .credit }
+        let archived = accounts.filter { $0.isArchived }
+        let available = money.filter(\.holdsMoney).reduce(0) { $0 + ledger.balance(of: $1) }
+        let bills = cards.reduce(0) { $0 + Billing.status(for: $1, ledger: ledger).due }
         NavigationStack {
-            List {
-                ForEach(AccountKind.allCases) { kind in
-                    let items = accounts.filter { $0.kind == kind && !$0.isArchived }
-                    if !items.isEmpty {
-                        Section(kind.label) {
-                            ForEach(items) { account in
-                                NavigationLink {
-                                    AccountDetailView(account: account)
-                                } label: {
-                                    AccountRow(account: account, ledger: ledger)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 26) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Available").font(.subheadline).foregroundStyle(.secondary)
+                        Text(Yen.format(available))
+                            .font(.system(size: 44, weight: .bold))
+                            .monospacedDigit()
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.5)
+                        Text(bills > 0
+                             ? "\(Yen.format(available - bills)) after \(Yen.format(bills)) in card bills"
+                             : "No card bills due")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                    .padding(.horizontal, 4)
+
+                    if !cards.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            LazyHStack(spacing: 12) {
+                                ForEach(Array(cards.enumerated()), id: \.element.id) { index, card in
+                                    NavigationLink {
+                                        AccountDetailView(account: card)
+                                    } label: {
+                                        CreditCardFace(account: card, ledger: ledger, colorIndex: index)
+                                    }
+                                    .buttonStyle(.plain)
                                 }
                             }
+                            .scrollTargetLayout()
                         }
+                        .scrollTargetBehavior(.viewAligned)
+                        .contentMargins(.horizontal, 16, for: .scrollContent)
+                        .padding(.horizontal, -16)
+                    }
+
+                    if !money.isEmpty {
+                        accountList("Money", money, ledger: ledger)
+                    }
+                    if !archived.isEmpty {
+                        accountList("Archived", archived, ledger: ledger)
+                            .opacity(0.6)
                     }
                 }
-                let archived = accounts.filter { $0.isArchived }
-                if !archived.isEmpty {
-                    Section("Archived") {
-                        ForEach(archived) { account in
-                            NavigationLink {
-                                AccountDetailView(account: account)
-                            } label: {
-                                AccountRow(account: account, ledger: ledger).opacity(0.6)
-                            }
-                        }
-                    }
-                }
+                .padding(.horizontal)
+                .padding(.bottom, 24)
             }
+            .background(Color.groupedBackground)
             .navigationTitle("Accounts")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -45,12 +72,102 @@ struct AccountsView: View {
                     } label: {
                         Image(systemName: "plus")
                     }
+                    .accessibilityLabel("Add account")
                 }
             }
             .sheet(isPresented: $creating) {
                 AccountEditView(account: nil)
             }
         }
+    }
+
+    private func accountList(_ title: String, _ items: [Account], ledger: Ledger) -> some View {
+        VStack(spacing: 10) {
+            SectionHeader(title: title)
+            RowsCard {
+                ForEach(Array(items.enumerated()), id: \.element.id) { index, account in
+                    if index > 0 { RowDivider() }
+                    NavigationLink {
+                        AccountDetailView(account: account)
+                    } label: {
+                        AccountRow(account: account, ledger: ledger)
+                            .padding(.vertical, 12)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+}
+
+/// A credit account drawn as a card: what's due, when, and the next bill so far.
+struct CreditCardFace: View {
+    let account: Account
+    let ledger: Ledger
+    let colorIndex: Int
+
+    private static let faces: [Color] = [
+        Color(uiColor: UIColor(hex: 0x3B2F80)),
+        Color(uiColor: UIColor(hex: 0x1F4D45)),
+        Color(uiColor: UIColor(hex: 0x4A2F3F)),
+        Color(uiColor: UIColor(hex: 0x2F3A4F)),
+    ]
+
+    var body: some View {
+        let status = Billing.status(for: account, ledger: ledger)
+        let calendar = Calendar.kakeibo
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: Date()),
+                                           to: calendar.startOfDay(for: status.dueDate)).day ?? 0
+        let payFrom = ledger.account(account.payFromAccountID)?.name
+        VStack(alignment: .leading) {
+            HStack {
+                Text(account.name).font(.subheadline.weight(.semibold)).lineLimit(1)
+                Spacer()
+                if status.due > 0 && (status.isOverdue || days <= 7) {
+                    Text(status.isOverdue ? "Overdue" : (days == 0 ? "Due today" : "Due in \(days) day\(days == 1 ? "" : "s")"))
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(Color.orange.opacity(0.25)))
+                        .foregroundStyle(Color(uiColor: UIColor(hex: 0xFFC266)))
+                }
+            }
+            Spacer()
+            if status.due > 0 {
+                Text("Due \(status.dueDate.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))")
+                    .font(.footnote)
+                    .foregroundStyle(.white.opacity(0.75))
+                Text(Yen.format(status.due))
+                    .font(.system(size: 30, weight: .bold))
+                    .monospacedDigit()
+            } else {
+                Text("Nothing due").font(.footnote).foregroundStyle(.white.opacity(0.75))
+                Text(Yen.format(max(status.owedNow, 0)))
+                    .font(.system(size: 30, weight: .bold))
+                    .monospacedDigit()
+            }
+            Spacer()
+            HStack {
+                Text("Next bill so far \(Yen.format(status.nextSoFar))")
+                Spacer()
+                if let payFrom { Text("From \(payFrom)").lineLimit(1) }
+            }
+            .font(.footnote)
+            .foregroundStyle(.white.opacity(0.75))
+            .monospacedDigit()
+        }
+        .foregroundStyle(.white)
+        .padding(18)
+        .frame(width: 292, height: 184)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(Self.faces[colorIndex % Self.faces.count])
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.14), lineWidth: 0.5)
+        )
+        .environment(\.colorScheme, .dark)
     }
 }
 
@@ -60,35 +177,49 @@ struct AccountRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Text(account.emoji).font(.title3)
+            IconTile(symbol: account.kind.symbol, size: 40, circle: true, neutral: true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(account.name)
                 if let detail {
-                    Text(detail).font(.caption).foregroundStyle(.secondary)
+                    Text(detail.text)
+                        .font(.footnote)
+                        .foregroundStyle(detail.warning ? Color.shortfall : Color.secondary)
                 }
             }
             Spacer()
             if account.tracksBalance {
                 let value = ledger.balance(of: account)
                 Text(Yen.format(account.kind == .credit ? max(-value, 0) : value))
+                    .font(.body.weight(.semibold))
                     .monospacedDigit()
                     .foregroundStyle(account.kind != .credit && value < 0 ? Color.red : Color.primary)
+            } else {
+                Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
             }
         }
+        .contentShape(Rectangle())
     }
 
-    private var detail: String? {
+    private var detail: (text: String, warning: Bool)? {
         if account.kind == .credit {
             let status = Billing.status(for: account, ledger: ledger)
             if status.due > 0 {
-                return "Due \(status.dueDate.formatted(.dateTime.day().month(.abbreviated))): \(Yen.format(status.due))"
-                    + (status.isOverdue ? " (overdue)" : "")
+                return ("Due \(status.dueDate.formatted(.dateTime.day().month(.abbreviated))): \(Yen.format(status.due))"
+                    + (status.isOverdue ? " (overdue)" : ""), status.isOverdue)
             }
-            return "Next bill so far: \(Yen.format(status.nextSoFar))"
+            return ("Next bill so far: \(Yen.format(status.nextSoFar))", false)
         }
         if !account.tracksBalance {
-            return "Top-ups count as spending"
+            return ("Top-ups count as spending", false)
         }
+        let shortfall = Billing.reminders(ledger: ledger)
+            .filter { $0.payFrom?.id == account.id }
+            .map(\.shortfall)
+            .max() ?? 0
+        if shortfall > 0 {
+            return ("\(Yen.format(shortfall)) short for bills", true)
+        }
+        if account.kind == .topUp { return ("Top-up", false) }
         return nil
     }
 }

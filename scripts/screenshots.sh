@@ -31,12 +31,16 @@ xcrun simctl ui "$UDID" appearance light
 shoot 01-home home
 shoot 02-add-entry add
 shoot 03-transactions transactions
-shoot 04-accounts accounts
-shoot 05-card-detail card
-shoot 06-partner partner
-shoot 07-review review
-shoot 08-categories categories
-shoot 09-setup setup
+shoot 04-budgets budgets
+shoot 05-accounts accounts
+shoot 06-card-detail card
+shoot 07-partner partner
+shoot 08-review review
+shoot 09-categories categories
+shoot 10-setup setup
+shoot 11-edit-home edit-home
 xcrun simctl ui "$UDID" appearance dark
-shoot 10-home-dark home
-shoot 11-add-entry-dark add
+shoot 12-home-dark home
+shoot 13-budgets-dark budgets
+shoot 14-accounts-dark accounts
+shoot 15-add-entry-dark add

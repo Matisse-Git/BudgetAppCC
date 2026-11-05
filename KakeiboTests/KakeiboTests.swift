@@ -201,3 +201,45 @@ final class QuickLogTests: XCTestCase {
         XCTAssertEqual(QuickLog.guessCategory(merchant: "New shop", entries: [past], categories: [konbini, other]), other.id)
     }
 }
+
+final class InsightsTests: XCTestCase {
+    func testCumulativeSpendingRunsByDay() {
+        let bank = Account(name: "Bank", kind: .bank)
+        let food = BudgetCategory(name: "Restaurants", emoji: "🍜", kind: .expense, sortOrder: 0)
+        let a = Entry(kind: .expense, amount: 1000, date: day(2026, 11, 1), accountID: bank.id, categoryID: food.id)
+        let b = Entry(kind: .expense, amount: 500, date: day(2026, 11, 3), accountID: bank.id, categoryID: food.id)
+        let late = Entry(kind: .expense, amount: 9000, date: day(2026, 11, 20), accountID: bank.id, categoryID: food.id)
+        let ledger = Ledger(accounts: [bank], categories: [food], entries: [a, b, late])
+        let month = Ledger.monthInterval(containing: day(2026, 11, 1))
+
+        XCTAssertEqual(ledger.cumulativeSpending(in: month, until: day(2026, 11, 4, hour: 0)), [1000, 1000, 1500])
+        XCTAssertEqual(ledger.cumulativeSpending(in: month).count, 30)
+        XCTAssertEqual(ledger.cumulativeSpending(in: month).last, 10_500)
+    }
+
+    func testMonthSummaryPerDayAllowance() {
+        let bank = Account(name: "Bank", kind: .bank)
+        let food = BudgetCategory(name: "Supermarket", emoji: "🛒", kind: .expense, sortOrder: 0, monthlyBudget: 40_000)
+        let shop = Entry(kind: .expense, amount: 10_000, date: day(2026, 11, 2), accountID: bank.id, categoryID: food.id)
+        let ledger = Ledger(accounts: [bank], categories: [food], entries: [shop])
+        let summary = MonthSummary(ledger: ledger, month: day(2026, 11, 11), now: day(2026, 11, 11))
+
+        XCTAssertEqual(summary.spent, 10_000)
+        XCTAssertEqual(summary.left, 30_000)
+        XCTAssertEqual(summary.daysLeft, 20)
+        XCTAssertEqual(summary.perDay, 1_500)
+        XCTAssertEqual(summary.cumulative.count, 11)
+        XCTAssertEqual(summary.previous.count, 31)
+    }
+
+    func testHomeSectionOrderKeepsKnownSectionsAndAddsNewOnes() {
+        XCTAssertEqual(HomeSection.order(from: "budgets,bogus,recent,budgets"), [.budgets, .recent, .bills, .partner])
+        XCTAssertEqual(HomeSection.hidden(from: "partner,nope"), [.partner])
+        XCTAssertEqual(HomeSection.encode([.recent, .bills]), "recent,bills")
+    }
+
+    func testShortYenLabels() {
+        XCTAssertEqual(Yen.short(200_000), "¥200k")
+        XCTAssertEqual(Yen.short(950), "¥950")
+    }
+}

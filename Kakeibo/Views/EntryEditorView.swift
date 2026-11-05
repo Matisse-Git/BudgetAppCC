@@ -24,6 +24,8 @@ struct EntryEditorView: View {
     }
 
     let mode: Mode
+    /// Type a new entry starts as (Home's Transfer button opens it as a transfer).
+    var initialKind: EntryKind = .expense
 
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
@@ -140,7 +142,9 @@ struct EntryEditorView: View {
     private var amountDisplay: some View {
         VStack(spacing: 2) {
             Text(Yen.format(amount))
-                .font(.system(size: 44, weight: .semibold, design: .rounded))
+                .font(.system(size: 56, weight: .bold))
+                .foregroundStyle(amount == 0 ? Color.secondary : Color.primary)
+                .contentTransition(.numericText())
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
@@ -209,9 +213,10 @@ struct EntryEditorView: View {
             Text(text).lineLimit(1)
         }
         .font(.subheadline)
-        .padding(.horizontal, 10)
+        .foregroundStyle(.primary)
+        .padding(.horizontal, 12)
         .padding(.vertical, 7)
-        .background(Capsule().fill(Color.chip))
+        .background(Capsule().fill(Color.tileFill))
     }
 
     private var categoryGrid: some View {
@@ -221,17 +226,29 @@ struct EntryEditorView: View {
                     Button {
                         save(categoryID: category.id)
                     } label: {
-                        VStack(spacing: 2) {
-                            Text(category.emoji).font(.title2)
+                        let look = CategoryLook.of(category)
+                        let selected = category.id == editing?.categoryID
+                        VStack(spacing: 5) {
+                            if let symbol = look.symbol {
+                                Image(systemName: symbol)
+                                    .font(.system(size: 19, weight: .medium))
+                                    .foregroundStyle(look.isHighlighted || category.kind == .income ? look.tint : Color.secondary)
+                            } else {
+                                Text(category.emoji).font(.title3)
+                            }
                             Text(category.name)
-                                .font(.caption2)
+                                .font(.caption2.weight(.medium))
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.6)
                         }
-                        .frame(maxWidth: .infinity, minHeight: 58)
+                        .frame(maxWidth: .infinity, minHeight: 64)
                         .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(category.id == editing?.categoryID ? Color.accentColor.opacity(0.25) : Color.chip)
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(selected ? Color.accentColor.opacity(0.22) : Color.tileFill)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .strokeBorder(selected ? Color.accentColor : Color.clear, lineWidth: 2)
                         )
                         .contentShape(Rectangle())
                     }
@@ -267,6 +284,7 @@ struct EntryEditorView: View {
                 customShare = entry.partnerShare
             }
         } else {
+            kind = initialKind
             let preferred = UUID(uuidString: defaultAccountID)
             accountID = spendAccounts.first { $0.id == preferred }?.id ?? spendAccounts.first?.id
             if DemoMode.isOn {

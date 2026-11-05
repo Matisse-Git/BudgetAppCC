@@ -13,7 +13,7 @@ struct CardStyle: ViewModifier {
         content
             .padding()
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.card))
+            .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Color.card))
     }
 }
 
@@ -45,21 +45,20 @@ struct ShareItem: Identifiable {
 struct ProgressBar: View {
     let fraction: Double
     let isOver: Bool
-
-    private var color: Color {
-        if isOver { return .red }
-        if fraction > 0.85 { return .orange }
-        return .green
-    }
+    var tint: Color = .accentColor
+    var height: CGFloat = 6
 
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
-                Capsule().fill(Color.key)
-                Capsule().fill(color).frame(width: geo.size.width * min(max(fraction, 0), 1))
+                Capsule().fill(Color.barTrack)
+                Capsule()
+                    .fill(isOver ? Color.red : tint)
+                    .frame(width: geo.size.width * min(max(fraction, 0), 1))
             }
         }
-        .frame(height: 8)
+        .frame(height: height)
+        .accessibilityHidden(true)
     }
 }
 
@@ -112,12 +111,13 @@ struct KeypadView: View {
                             Text(key)
                         }
                     }
-                    .font(.title2.weight(.medium))
-                    .frame(maxWidth: .infinity, minHeight: 46)
-                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.key))
+                    .font(.system(size: 26, weight: .medium))
+                    .monospacedDigit()
+                    .frame(maxWidth: .infinity, minHeight: 50)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(KeyButtonStyle())
+                .accessibilityLabel(key == "⌫" ? "Delete" : key)
             }
         }
     }
@@ -134,6 +134,17 @@ struct KeypadView: View {
     }
 }
 
+/// Keypad key: no box, a soft highlight while pressed.
+struct KeyButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.key.opacity(configuration.isPressed ? 1 : 0))
+            )
+    }
+}
+
 /// One line in a transaction list.
 struct EntryRow: View {
     let entry: Entry
@@ -142,13 +153,14 @@ struct EntryRow: View {
 
     private var category: BudgetCategory? { lookup.category(entry.categoryID) }
 
-    private var icon: String {
+    @ViewBuilder
+    private var icon: some View {
         switch entry.kind {
-        case .expense, .income: return category?.emoji ?? "❔"
-        case .transfer: return "🔄"
-        case .payoff: return "💳"
-        case .settlement: return "💞"
-        case .adjust: return "⚖️"
+        case .expense, .income: CategoryTile(category: category, size: 40, circle: true)
+        case .transfer: IconTile(symbol: "arrow.left.arrow.right", size: 40, circle: true, neutral: true)
+        case .payoff: IconTile(symbol: "creditcard", size: 40, circle: true, neutral: true)
+        case .settlement: IconTile(symbol: "heart", tint: .pink, size: 40, circle: true)
+        case .adjust: IconTile(symbol: "slider.horizontal.3", size: 40, circle: true, neutral: true)
         }
     }
 
@@ -196,10 +208,10 @@ struct EntryRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Text(icon).font(.title3).frame(width: 34)
+            icon
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
-                    Text(title).lineLimit(1)
+                    Text(title).font(.body).lineLimit(1)
                     if entry.isSharedExpense {
                         Image(systemName: "person.2.fill").font(.caption2).foregroundStyle(.pink)
                     }
@@ -210,13 +222,13 @@ struct EntryRow: View {
                         Image(systemName: "exclamationmark.circle").font(.caption).foregroundStyle(.orange)
                     }
                 }
-                Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(subtitle).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 2) {
                 Text(amountText).monospacedDigit().foregroundStyle(amountColor)
                 if entry.isSharedExpense {
-                    Text("mine \(Yen.format(entry.myShare))").font(.caption2).foregroundStyle(.secondary)
+                    Text("mine \(Yen.format(entry.myShare))").font(.footnote).foregroundStyle(.secondary)
                 }
             }
         }
