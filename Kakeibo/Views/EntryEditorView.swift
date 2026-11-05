@@ -269,6 +269,10 @@ struct EntryEditorView: View {
         } else {
             let preferred = UUID(uuidString: defaultAccountID)
             accountID = spendAccounts.first { $0.id == preferred }?.id ?? spendAccounts.first?.id
+            if DemoMode.isOn {
+                amount = 3_600
+                split = .half
+            }
         }
     }
 

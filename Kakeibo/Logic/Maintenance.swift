@@ -25,7 +25,9 @@ final class AppData {
         let schema = Schema([Account.self, BudgetCategory.self, Entry.self])
         let folder = URL.applicationSupportDirectory
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let configuration = ModelConfiguration(schema: schema, url: folder.appending(path: "Kakeibo.store"), cloudKitDatabase: .none)
+        let configuration = DemoMode.isOn
+            ? ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
+            : ModelConfiguration(schema: schema, url: folder.appending(path: "Kakeibo.store"), cloudKitDatabase: .none)
         do {
             container = try ModelContainer(for: schema, configurations: configuration)
         } catch {

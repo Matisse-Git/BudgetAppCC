@@ -23,6 +23,15 @@ struct RootView: View {
     @State private var tab = 0
 
     var body: some View {
+        if let screen = DemoMode.screen, DemoScreen.standalone.contains(screen) {
+            DemoScreen(name: screen)
+                .task { startDemo() }
+        } else {
+            tabs
+        }
+    }
+
+    private var tabs: some View {
         TabView(selection: $tab) {
             HomeView(showAdd: $showAdd)
                 .tabItem { Label("Home", systemImage: "house") }
@@ -44,6 +53,10 @@ struct RootView: View {
             }
         }
         .task {
+            if DemoMode.isOn {
+                startDemo()
+                return
+            }
             if !seeded {
                 if let id = Seed.insertDefaults(into: context), defaultAccountID.isEmpty {
                     defaultAccountID = id.uuidString
@@ -74,5 +87,18 @@ struct RootView: View {
                 break
             }
         }
+    }
+
+    /// Fills an in-memory database with sample data and opens the requested screen.
+    private func startDemo() {
+        guard (try? context.fetchCount(FetchDescriptor<Account>())) == 0 else { return }
+        if let id = Seed.insertDefaults(into: context) { defaultAccountID = id.uuidString }
+        DemoData.populate(context)
+        let screen = DemoMode.screen ?? "home"
+        setupDone = screen != "setup"
+        showSetup = screen == "setup"
+        showAdd = screen == "add"
+        tab = screen == "transactions" ? 1 : (screen == "accounts" ? 2 : 0)
+        Maintenance.run(context, autoPayoffs: false)
     }
 }
