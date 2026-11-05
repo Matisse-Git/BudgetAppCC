@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show Xcode
+        run: |
+          ls -d /Applications/Xcode*.app || true
+          xcodebuild -version
+          xcrun --sdk iphonesimulator --show-sdk-version
+
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Pick a simulator
+        id: sim
+        run: |
+          SDK=$(xcrun --sdk iphonesimulator --show-sdk-version)
+          UDID=$(xcrun simctl list devices available -j | SDK="$SDK" python3 -c '
+          import json, os, sys
+          sdk = os.environ["SDK"].replace(".", "-")
+          devices = json.load(sys.stdin)["devices"]
+          def phones(match):
+              return [d for k, v in devices.items() if "iOS" in k and (match is None or k.endswith("iOS-" + sdk)) for d in v if d["name"].startswith("iPhone")]
+          found = phones(sdk) or phones(None)
+          print(found[-1]["udid"])
+          ')
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          xcrun simctl list devices available | grep "$UDID"
+
+      - name: Run tests
+        run: |
+          status=0
+          xcodebuild test \
+            -project Kakeibo.xcodeproj \
+            -scheme Kakeibo \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -resultBundlePath build/TestResults.xcresult \
+            CODE_SIGNING_ALLOWED=NO > test.log 2>&1 || status=$?
+          grep -E "error:|Test Case .*(passed|failed)|Executed|TEST (SUCCEEDED|FAILED)|BUILD FAILED" test.log || true
+          if [ $status -ne 0 ]; then tail -n 80 test.log; fi
+          exit $status
+
+      - name: Build IPA for AltStore
+        run: ./scripts/build-ipa.sh
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kakeibo-ipa
+          path: build/Kakeibo.ipa
+          retention-days: 30
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs
+          path: |
+            test.log
+            build/build-ipa.log
+          retention-days: 7

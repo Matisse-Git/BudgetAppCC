@@ -1,0 +1,198 @@
+import Foundation
+import SwiftData
+
+/// Full JSON export/restore and a CSV of transactions.
+enum Backup {
+    struct File: Codable {
+        var version: Int
+        var exportedAt: Date
+        var defaultAccountID: String?
+        var partnerName: String?
+        var accounts: [AccountRecord]
+        var categories: [CategoryRecord]
+        var entries: [EntryRecord]
+    }
+
+    struct AccountRecord: Codable {
+        var id: UUID
+        var name: String
+        var emoji: String
+        var kindRaw: String
+        var openingBalance: Int
+        var createdAt: Date
+        var sortOrder: Int
+        var isArchived: Bool
+        var currencyCode: String
+        var closingDay: Int
+        var paymentDay: Int
+        var payFromAccountID: UUID?
+        var autoPayoff: Bool
+        var countsTopUpAsSpending: Bool
+        var topUpCategoryID: UUID?
+        var walletCardName: String
+        var shareScope: String?
+
+        init(_ a: Account) {
+            id = a.id; name = a.name; emoji = a.emoji; kindRaw = a.kindRaw; openingBalance = a.openingBalance
+            createdAt = a.createdAt; sortOrder = a.sortOrder; isArchived = a.isArchived; currencyCode = a.currencyCode
+            closingDay = a.closingDay; paymentDay = a.paymentDay; payFromAccountID = a.payFromAccountID
+            autoPayoff = a.autoPayoff; countsTopUpAsSpending = a.countsTopUpAsSpending; topUpCategoryID = a.topUpCategoryID
+            walletCardName = a.walletCardName; shareScope = a.shareScope
+        }
+
+        func make() -> Account {
+            let a = Account(name: name, kind: AccountKind(rawValue: kindRaw) ?? .bank, emoji: emoji, openingBalance: openingBalance, sortOrder: sortOrder)
+            a.id = id; a.createdAt = createdAt; a.isArchived = isArchived; a.currencyCode = currencyCode
+            a.closingDay = closingDay; a.paymentDay = paymentDay; a.payFromAccountID = payFromAccountID
+            a.autoPayoff = autoPayoff; a.countsTopUpAsSpending = countsTopUpAsSpending; a.topUpCategoryID = topUpCategoryID
+            a.walletCardName = walletCardName; a.shareScope = shareScope
+            return a
+        }
+    }
+
+    struct CategoryRecord: Codable {
+        var id: UUID
+        var name: String
+        var emoji: String
+        var kindRaw: String
+        var monthlyBudget: Int
+        var sortOrder: Int
+        var isArchived: Bool
+
+        init(_ c: BudgetCategory) {
+            id = c.id; name = c.name; emoji = c.emoji; kindRaw = c.kindRaw
+            monthlyBudget = c.monthlyBudget; sortOrder = c.sortOrder; isArchived = c.isArchived
+        }
+
+        func make() -> BudgetCategory {
+            let c = BudgetCategory(name: name, emoji: emoji, kind: CategoryKind(rawValue: kindRaw) ?? .expense, sortOrder: sortOrder, monthlyBudget: monthlyBudget)
+            c.id = id; c.isArchived = isArchived
+            return c
+        }
+    }
+
+    struct EntryRecord: Codable {
+        var id: UUID
+        var kindRaw: String
+        var amount: Int
+        var date: Date
+        var note: String
+        var merchant: String
+        var accountID: UUID?
+        var toAccountID: UUID?
+        var categoryID: UUID?
+        var isRefund: Bool
+        var partnerShare: Int
+        var settlementTargetID: UUID?
+        var isConfirmed: Bool
+        var isAutoCreated: Bool
+        var needsReview: Bool
+        var billCycleKey: String?
+        var currencyCode: String
+        var createdAt: Date
+
+        init(_ e: Entry) {
+            id = e.id; kindRaw = e.kindRaw; amount = e.amount; date = e.date; note = e.note; merchant = e.merchant
+            accountID = e.accountID; toAccountID = e.toAccountID; categoryID = e.categoryID; isRefund = e.isRefund
+            partnerShare = e.partnerShare; settlementTargetID = e.settlementTargetID; isConfirmed = e.isConfirmed
+            isAutoCreated = e.isAutoCreated; needsReview = e.needsReview; billCycleKey = e.billCycleKey
+            currencyCode = e.currencyCode; createdAt = e.createdAt
+        }
+
+        func make() -> Entry {
+            let e = Entry(kind: EntryKind(rawValue: kindRaw) ?? .expense, amount: amount, date: date,
+                          accountID: accountID, toAccountID: toAccountID, categoryID: categoryID)
+            e.id = id; e.note = note; e.merchant = merchant; e.isRefund = isRefund; e.partnerShare = partnerShare
+            e.settlementTargetID = settlementTargetID; e.isConfirmed = isConfirmed; e.isAutoCreated = isAutoCreated
+            e.needsReview = needsReview; e.billCycleKey = billCycleKey; e.currencyCode = currencyCode; e.createdAt = createdAt
+            return e
+        }
+    }
+
+    private static var encoder: JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return encoder
+    }
+
+    private static var decoder: JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }
+
+    private static var stamp: String {
+        Date().formatted(.iso8601.year().month().day())
+    }
+
+    @MainActor
+    static func exportJSON(context: ModelContext) throws -> URL {
+        let file = File(
+            version: 1,
+            exportedAt: Date(),
+            defaultAccountID: UserDefaults.standard.string(forKey: SettingsKey.defaultAccountID),
+            partnerName: UserDefaults.standard.string(forKey: SettingsKey.partnerName),
+            accounts: try context.fetch(FetchDescriptor<Account>()).map(AccountRecord.init),
+            categories: try context.fetch(FetchDescriptor<BudgetCategory>()).map(CategoryRecord.init),
+            entries: try context.fetch(FetchDescriptor<Entry>()).map(EntryRecord.init)
+        )
+        let url = FileManager.default.temporaryDirectory.appending(path: "Kakeibo-backup-\(stamp).json")
+        try encoder.encode(file).write(to: url, options: .atomic)
+        return url
+    }
+
+    /// Replaces all data with the backup.
+    @MainActor
+    static func restore(from data: Data, into context: ModelContext) throws {
+        let file = try decoder.decode(File.self, from: data)
+        try context.delete(model: Entry.self)
+        try context.delete(model: Account.self)
+        try context.delete(model: BudgetCategory.self)
+        file.accounts.forEach { context.insert($0.make()) }
+        file.categories.forEach { context.insert($0.make()) }
+        file.entries.forEach { context.insert($0.make()) }
+        try context.save()
+        if let id = file.defaultAccountID { UserDefaults.standard.set(id, forKey: SettingsKey.defaultAccountID) }
+        if let name = file.partnerName { UserDefaults.standard.set(name, forKey: SettingsKey.partnerName) }
+        UserDefaults.standard.set(true, forKey: SettingsKey.seeded)
+        UserDefaults.standard.set(true, forKey: SettingsKey.setupDone)
+    }
+
+    @MainActor
+    static func exportCSV(context: ModelContext) throws -> URL {
+        let accounts = try context.fetch(FetchDescriptor<Account>())
+        let categories = try context.fetch(FetchDescriptor<BudgetCategory>())
+        let entries = try context.fetch(FetchDescriptor<Entry>(sortBy: [SortDescriptor(\.date)]))
+        let lookup = Lookup(accounts: accounts, categories: categories)
+
+        var lines = ["date,type,amount,my_share,partner_share,refund,account,to_account,category,merchant,note,confirmed"]
+        for e in entries {
+            let fields: [String] = [
+                e.date.formatted(.iso8601.year().month().day()),
+                e.kind.label,
+                String(e.amount),
+                String(e.kind == .expense ? (e.isRefund ? -e.amount : e.myShare) : 0),
+                String(e.partnerShare),
+                e.isRefund ? "yes" : "",
+                e.accountID == nil ? "" : lookup.accountName(e.accountID),
+                e.toAccountID == nil ? "" : lookup.accountName(e.toAccountID),
+                lookup.category(e.categoryID)?.name ?? "",
+                e.merchant,
+                e.note,
+                e.kind == .payoff ? (e.isConfirmed ? "yes" : "no") : "",
+            ]
+            lines.append(fields.map(csvEscape).joined(separator: ","))
+        }
+        let url = FileManager.default.temporaryDirectory.appending(path: "Kakeibo-transactions-\(stamp).csv")
+        try lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+        return url
+    }
+
+    static func csvEscape(_ field: String) -> String {
+        if field.contains(",") || field.contains("\"") || field.contains("\n") {
+            return "\"" + field.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+        }
+        return field
+    }
+}

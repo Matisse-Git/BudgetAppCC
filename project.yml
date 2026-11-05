@@ -1,0 +1,75 @@
+name: Kakeibo
+options:
+  bundleIdPrefix: com.matisse
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ""
+targets:
+  Kakeibo:
+    type: application
+    platform: iOS
+    sources:
+      - Kakeibo
+      - Shared
+    info:
+      path: Kakeibo/Info.plist
+      properties:
+        CFBundleDisplayName: Kakeibo
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        ITSAppUsesNonExemptEncryption: false
+        CFBundleURLTypes:
+          - CFBundleURLName: com.matisse.kakeibo
+            CFBundleURLSchemes:
+              - kakeibo
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.matisse.kakeibo
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_ENTITLEMENTS: Kakeibo/Kakeibo.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    dependencies:
+      - target: KakeiboWidget
+    scheme:
+      testTargets:
+        - KakeiboTests
+  KakeiboWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - KakeiboWidget
+      - Shared
+    info:
+      path: KakeiboWidget/Info.plist
+      properties:
+        CFBundleDisplayName: Kakeibo
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.matisse.kakeibo.widget
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_ENTITLEMENTS: KakeiboWidget/KakeiboWidget.entitlements
+  KakeiboTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - KakeiboTests
+    dependencies:
+      - target: Kakeibo
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.matisse.kakeibo.tests
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Kakeibo.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Kakeibo"
+        BUNDLE_LOADER: "$(TEST_HOST)"
