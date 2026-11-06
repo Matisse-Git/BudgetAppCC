@@ -119,8 +119,9 @@ These decisions were agreed before any code was written. Update this file when a
   green with +¥); date/time and note chips; "Paid with" account chips; category tiles; the keypad pinned
   to the bottom with 00, 000 and a tall Save key. The note's keyboard covers the pad rather than squashing
   the screen.
-- Saving a new entry keeps the sheet open, clears the amount and shows "Saved ¥980 · Dining Out · Wallet"
-  with **Undo** (never a dialog). Edits, and transfers suggested by a shortfall warning, close the sheet.
+- Save closes the sheet. A new entry then shows "Saved ¥980 · Dining Out · Wallet" with **Undo** over the
+  app for a few seconds (never a dialog). The canvas kept the sheet open for logging several in a row; in
+  use, closing it was wanted.
 - Transfer shows each account's balance before and after, with a swap button.
 - Other ways in: the widgets, the Control Center control / Action Button ("Log Expense"), and the "Add
   Kakeibo Entry" shortcut.

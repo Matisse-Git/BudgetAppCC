@@ -18,7 +18,7 @@ enum SplitMode: String, CaseIterable, Identifiable {
 
 /// Quick Add (AddExpense and Transfer artboards). The keypad is live when the sheet opens:
 /// amount → category → Save, with category and account pre-picked from history. Saving a new entry
-/// keeps the sheet open with an Undo toast, so a few entries can go in a row; editing closes it.
+/// closes the sheet and shows an Undo toast over the app.
 struct EntryEditorView: View {
     enum Mode {
         case new
@@ -56,7 +56,7 @@ struct EntryEditorView: View {
     @State private var confirmDelete = false
     @State private var pickingDate = false
     @State private var pickingCategory = false
-    @State private var toast: SavedToast?
+    @Environment(SavedToastCenter.self) private var toasts: SavedToastCenter?
 
     private var editing: Entry? {
         if case .edit(let entry) = mode { return entry }
@@ -121,14 +121,6 @@ struct EntryEditorView: View {
         }
         .padding(.horizontal, 12)
         .background(Palette.sheet.ignoresSafeArea())
-        .overlay(alignment: .top) {
-            if let toast {
-                UndoToast(message: toast.message, onUndo: undo)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 70)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            }
-        }
         // The note's keyboard covers the keypad instead of squashing the sheet.
         .ignoresSafeArea(.keyboard, edges: .bottom)
         .presentationDragIndicator(.visible)
@@ -557,9 +549,6 @@ struct EntryEditorView: View {
         guard canSave else { return }
         let isNew = editing == nil
         let entry = editing ?? Entry(kind: kind, amount: amount)
-        let before = SavedToast.State(kind: kind, amount: amount, accountID: accountID, toAccountID: toAccountID,
-                                      categoryID: categoryID, date: date, note: note, merchant: merchant,
-                                      split: split, customShare: customShare, isRefund: isRefund)
         entry.kind = kind
         entry.amount = amount
         entry.date = date
@@ -579,20 +568,12 @@ struct EntryEditorView: View {
         } else {
             Haptics.success()
         }
-        // Edits, and transfers suggested by a warning, are done in one go.
-        guard isNew, reason == nil else {
-            dismiss()
-            return
+        // The sheet closes on Save; the Undo toast shows over the app for a new entry.
+        if isNew {
+            let message = limitNote.map { "Saved \(Yen.format(entry.amount)) · \($0)" } ?? toastMessage(for: entry)
+            toasts?.show(message, entry: entry)
         }
-        let message = limitNote.map { "Saved \(Yen.format(entry.amount)) · \($0)" } ?? toastMessage(for: entry)
-        showToast(SavedToast(entry: entry, message: message, state: before))
-        amount = 0
-        note = ""
-        merchant = ""
-        split = .none
-        customShare = 0
-        isRefund = false
-        date = Date()
+        dismiss()
     }
 
     private func toastMessage(for entry: Entry) -> String {
@@ -602,36 +583,6 @@ struct EntryEditorView: View {
         }
         let category = categories.first { $0.id == entry.categoryID }?.name ?? "Uncategorised"
         return "Saved \(Yen.format(entry.amount)) · \(category) · \(name(entry.accountID))"
-    }
-
-    private func showToast(_ item: SavedToast) {
-        withAnimation(.snappy) { toast = item }
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(3.2))
-            if toast?.id == item.id {
-                withAnimation(.easeOut) { toast = nil }
-            }
-        }
-    }
-
-    private func undo() {
-        guard let item = toast else { return }
-        context.delete(item.entry)
-        context.saveAndRefresh()
-        let s = item.state
-        kind = s.kind
-        amount = s.amount
-        accountID = s.accountID
-        toAccountID = s.toAccountID
-        categoryID = s.categoryID
-        date = s.date
-        note = s.note
-        merchant = s.merchant
-        split = s.split
-        customShare = s.customShare
-        isRefund = s.isRefund
-        withAnimation(.easeOut) { toast = nil }
-        Haptics.selection()
     }
 
     /// "Olive now at 46% of its limit" when this purchase took a card past its limit alert.
@@ -667,28 +618,6 @@ struct EntryEditorView: View {
         Haptics.warning()
         dismiss()
     }
-}
-
-/// What was just saved, and the sheet as it was, so Undo can put it back.
-private struct SavedToast: Identifiable {
-    struct State {
-        var kind: EntryKind
-        var amount: Int
-        var accountID: UUID?
-        var toAccountID: UUID?
-        var categoryID: UUID?
-        var date: Date
-        var note: String
-        var merchant: String
-        var split: SplitMode
-        var customShare: Int
-        var isRefund: Bool
-    }
-
-    let id = UUID()
-    let entry: Entry
-    let message: String
-    let state: State
 }
 
 // MARK: - Pieces

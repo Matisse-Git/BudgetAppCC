@@ -1,3 +1,5 @@
+import Observation
+import SwiftData
 import SwiftUI
 
 enum AppTab: String, CaseIterable, Identifiable {
@@ -85,5 +87,41 @@ struct MinimizeTabBarOnScroll: ViewModifier {
         } else {
             content
         }
+    }
+}
+
+/// "Saved ¥980 · Dining Out · Wallet [Undo]": shown over the app for a few seconds after the add sheet
+/// closes, so Save can close the sheet without losing Undo.
+@MainActor
+@Observable
+final class SavedToastCenter {
+    struct Item: Identifiable {
+        let id = UUID()
+        let message: String
+        let entry: Entry
+    }
+
+    private(set) var current: Item?
+
+    func show(_ message: String, entry: Entry) {
+        let item = Item(message: message, entry: entry)
+        withAnimation(.snappy) { current = item }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(4))
+            if self.current?.id == item.id {
+                withAnimation(.easeOut) { self.current = nil }
+            }
+        }
+    }
+
+    /// Deletes the entry just saved.
+    func undo(in context: ModelContext) {
+        guard let item = current else { return }
+        if item.entry.modelContext != nil && !item.entry.isDeleted {
+            context.delete(item.entry)
+            context.saveAndRefresh()
+        }
+        withAnimation(.easeOut) { current = nil }
+        Haptics.selection()
     }
 }

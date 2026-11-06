@@ -26,6 +26,7 @@ struct RootView: View {
     @AppStorage(SettingsKey.defaultAccountID) private var defaultAccountID = ""
 
     @State private var addDraft: EntryDraft?
+    @State private var toasts = SavedToastCenter()
     @Query(RootView.recentDescriptor) private var recentEntries: [Entry]
     @Query(sort: \BudgetCategory.sortOrder) private var categories: [BudgetCategory]
     @State private var showSetup = false
@@ -82,9 +83,20 @@ struct RootView: View {
         }
         .modifier(MinimizeTabBarOnScroll())
         .environment(\.quickAdd, QuickAddAction(start: { addDraft = $0 }, recent: repeatable, title: repeatTitle))
+        .environment(toasts)
+        .overlay(alignment: .bottom) {
+            if let item = toasts.current {
+                UndoToast(message: item.message) { toasts.undo(in: context) }
+                    .padding(.horizontal, Metrics.gutter)
+                    // Clear of the tab bar.
+                    .padding(.bottom, 72)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
         .tint(Palette.accentTint)
         .sheet(item: $addDraft) { draft in
             EntryEditorView(mode: .new, draft: draft)
+                .environment(toasts)
         }
         .fullScreenCover(isPresented: $showSetup) {
             OnboardingView {
