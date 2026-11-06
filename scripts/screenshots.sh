@@ -31,6 +31,7 @@ xcrun simctl ui "$UDID" appearance light
 shoot 01-home home
 shoot 02-add-entry add
 shoot 03-transactions transactions
+shoot 03b-transaction transaction
 shoot 04-budgets budgets
 shoot 05-accounts accounts
 shoot 05b-accounts-grouped accounts-grouped

@@ -18,6 +18,7 @@ enum DemoMode {
 struct DemoScreen: View {
     let name: String
     @Query(sort: \Account.sortOrder) private var accounts: [Account]
+    @Query(sort: \Entry.date, order: .reverse) private var entries: [Entry]
 
     var body: some View {
         if name == "edit-accounts" {
@@ -36,6 +37,13 @@ struct DemoScreen: View {
                 } else {
                     ProgressView()
                 }
+            case "transaction":
+                let cards = Set(accounts.filter { $0.kind == .credit }.map(\.id))
+                if let entry = entries.first(where: { $0.kind == .expense && $0.accountID.map(cards.contains) == true }) {
+                    TransactionDetailView(entry: entry)
+                } else {
+                    ProgressView()
+                }
             case "partner":
                 PartnerView()
             case "settings":
@@ -50,7 +58,7 @@ struct DemoScreen: View {
         }
     }
 
-    static let standalone: Set<String> = ["card", "partner", "settings", "categories", "review", "edit-accounts"]
+    static let standalone: Set<String> = ["card", "transaction", "partner", "settings", "categories", "review", "edit-accounts"]
 }
 
 enum DemoData {

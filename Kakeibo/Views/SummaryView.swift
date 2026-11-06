@@ -12,7 +12,6 @@ struct SummaryView: View {
     @AppStorage(SettingsKey.partnerName) private var partnerName = SettingsKey.defaultPartnerName
     @AppStorage(SettingsKey.shortfallWarnings) private var shortfallWarnings = true
     @State private var draft: EntryDraft?
-    @State private var editing: Entry?
 
     var body: some View {
         let now = Date()
@@ -57,9 +56,6 @@ struct SummaryView: View {
             }
             .sheet(item: $draft) { draft in
                 EntryEditorView(mode: .new, draft: draft)
-            }
-            .sheet(item: $editing) { entry in
-                EntryEditorRouter(entry: entry)
             }
         }
     }
@@ -211,8 +207,8 @@ struct SummaryView: View {
             CardList {
                 ForEach(Array(recent.enumerated()), id: \.element.id) { index, entry in
                     if index > 0 { ListDivider() }
-                    Button {
-                        editing = entry
+                    NavigationLink {
+                        TransactionDetailView(entry: entry)
                     } label: {
                         TransactionRow(entry: entry, lookup: lookup, partnerName: partnerName, timeStyle: .relative, now: now)
                     }

@@ -65,6 +65,16 @@ struct BillReminder: Identifiable {
     let isOverdue: Bool
 }
 
+/// A statement that closed, for the Activity feed ("Travel Card statement closed").
+struct StatementEvent: Identifiable {
+    let account: Account
+    let cycle: BillCycle
+    /// Owed on the card when the statement closed.
+    let amount: Int
+
+    var id: String { cycle.key(for: account.id) }
+}
+
 enum Billing {
     static let processedKey = "processedBillCycles"
 
@@ -195,6 +205,22 @@ enum Billing {
             isOverdue: dueAmount > 0 && now >= dayAfterPayment,
             owedNow: owedNow
         )
+    }
+
+    /// Statements of active cards that closed after `start` and by `end`, newest first.
+    static func closedStatements(ledger: Ledger, from start: Date, to end: Date, calendar: Calendar = .kakeibo) -> [StatementEvent] {
+        var events: [StatementEvent] = []
+        for account in ledger.accounts where account.kind == .credit && !account.isArchived {
+            let rule = account.billingRule
+            var cycle = latestCycle(rule: rule, now: end, calendar: calendar)
+            for _ in 0..<36 {
+                guard cycle.closingBoundary > start else { break }
+                let owed = -ledger.balance(of: account, before: cycle.closingBoundary)
+                if owed > 0 { events.append(StatementEvent(account: account, cycle: cycle, amount: owed)) }
+                cycle = shifted(cycle, by: -1, rule: rule, calendar: calendar)
+            }
+        }
+        return events.sorted { $0.cycle.closingDate > $1.cycle.closingDate }
     }
 
     // MARK: Reminders and shortfalls

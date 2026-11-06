@@ -8,65 +8,48 @@ enum RowTimeStyle {
     case relative
 }
 
-/// One entry in a list, as on the Summary and Activity artboards: the merchant or note as the title,
-/// "Category · Account" under it, and the amount with a time. Spending has no sign, income is green
-/// with a plus, transfers and card payments are grey.
-struct TransactionRow: View {
+/// How an entry reads: icon, title, subtitle and amount. Shared by list rows and the detail screen.
+struct EntryPresentation {
     let entry: Entry
     let lookup: Lookup
     var partnerName: String = SettingsKey.defaultPartnerName
-    var timeStyle: RowTimeStyle = .time
-    var now: Date = Date()
 
-    private var category: BudgetCategory? { lookup.category(entry.categoryID) }
-    private var account: Account? { entry.accountID.flatMap { lookup.accounts[$0] } }
-    private var toAccount: Account? { entry.toAccountID.flatMap { lookup.accounts[$0] } }
-
-    var body: some View {
-        KRow(title, leading: {
-            icon
-        }, subtitle: {
-            subtitle
-        }, trailing: {
-            AmountStack(amountText, color: amountColor, caption: timeText)
-        })
-        .accessibilityElement(children: .combine)
-    }
-
-    // MARK: Pieces
+    var category: BudgetCategory? { lookup.category(entry.categoryID) }
+    var account: Account? { entry.accountID.flatMap { lookup.accounts[$0] } }
+    var toAccount: Account? { entry.toAccountID.flatMap { lookup.accounts[$0] } }
 
     @ViewBuilder
-    private var icon: some View {
+    func icon(size: CGFloat = Metrics.rowIcon) -> some View {
         switch entry.kind {
         case .expense, .income:
-            CategoryIcon(category: category)
+            CategoryIcon(category: category, size: size)
         case .transfer:
-            SymbolTile(symbol: "arrow.left.arrow.right", hue: .gray)
+            SymbolTile(symbol: "arrow.left.arrow.right", hue: .gray, size: size)
         case .payoff:
             if let card = toAccount, card.kind == .credit {
-                MiniCard(color: AccountLook.cardColor(card).color, width: 32)
-                    .frame(width: 32, height: 32)
+                MiniCard(color: AccountLook.cardColor(card).color, width: size)
+                    .frame(width: size, height: size)
             } else {
-                SymbolTile(symbol: "creditcard.fill", hue: .gray)
+                SymbolTile(symbol: "creditcard.fill", hue: .gray, size: size)
             }
         case .settlement:
-            SymbolTile(symbol: "heart.fill", hue: .pink)
+            SymbolTile(symbol: "heart.fill", hue: .pink, size: size)
         case .adjust:
-            SymbolTile(symbol: "slider.horizontal.3", hue: .gray)
+            SymbolTile(symbol: "slider.horizontal.3", hue: .gray, size: size)
         }
     }
 
-    /// Merchant, else note, else what the entry is.
-    private var label: String {
+    /// Merchant, else note.
+    var label: String {
         let merchant = entry.merchant.trimmingCharacters(in: .whitespaces)
         return merchant.isEmpty ? entry.note.trimmingCharacters(in: .whitespaces) : merchant
     }
 
-    private var usesCategoryAsTitle: Bool {
+    var usesCategoryAsTitle: Bool {
         (entry.kind == .expense || entry.kind == .income) && label.isEmpty
     }
 
-    private var title: String {
+    var title: String {
         switch entry.kind {
         case .expense:
             return label.isEmpty ? (category?.name ?? "Uncategorised") : label
@@ -83,7 +66,7 @@ struct TransactionRow: View {
         }
     }
 
-    private var subtitleText: String {
+    var subtitle: String {
         let accountName = account?.name ?? "No account"
         switch entry.kind {
         case .expense, .income:
@@ -99,9 +82,56 @@ struct TransactionRow: View {
         }
     }
 
-    private var subtitle: some View {
+    /// Spending has no sign, money coming in has a plus.
+    var amountText: String {
+        switch entry.kind {
+        case .expense:
+            return entry.isRefund ? Yen.format(entry.amount, showPlus: true) : Yen.format(entry.amount)
+        case .income, .settlement, .adjust:
+            return Yen.format(entry.amount, showPlus: true)
+        case .transfer, .payoff:
+            return Yen.format(entry.amount)
+        }
+    }
+
+    var amountColor: Color {
+        switch entry.kind {
+        case .income, .settlement: return Palette.positive
+        case .expense: return entry.isRefund ? Palette.positive : Palette.textPrimary
+        case .transfer, .payoff, .adjust: return Palette.textSecondary
+        }
+    }
+}
+
+/// One entry in a list, as on the Summary and Activity artboards: the merchant or note as the title,
+/// "Category · Account" under it, and the amount with a time. Spending has no sign, income is green
+/// with a plus, transfers and card payments are grey.
+struct TransactionRow: View {
+    let entry: Entry
+    let lookup: Lookup
+    var partnerName: String = SettingsKey.defaultPartnerName
+    var timeStyle: RowTimeStyle = .time
+    var now: Date = Date()
+
+    private var presentation: EntryPresentation {
+        EntryPresentation(entry: entry, lookup: lookup, partnerName: partnerName)
+    }
+
+    var body: some View {
+        let look = presentation
+        KRow(look.title, leading: {
+            look.icon()
+        }, subtitle: {
+            subtitle(look)
+        }, trailing: {
+            AmountStack(look.amountText, color: look.amountColor, caption: timeText)
+        })
+        .accessibilityElement(children: .combine)
+    }
+
+    private func subtitle(_ look: EntryPresentation) -> some View {
         HStack(spacing: 6) {
-            Text(subtitleText)
+            Text(look.subtitle)
             if entry.kind == .payoff && entry.isAutoCreated {
                 AutoBadge()
             }
@@ -117,25 +147,6 @@ struct TransactionRow: View {
                     .foregroundStyle(Palette.warning)
                     .accessibilityLabel("To review")
             }
-        }
-    }
-
-    private var amountText: String {
-        switch entry.kind {
-        case .expense:
-            return entry.isRefund ? Yen.format(entry.amount, showPlus: true) : Yen.format(entry.amount)
-        case .income, .settlement, .adjust:
-            return Yen.format(entry.amount, showPlus: true)
-        case .transfer, .payoff:
-            return Yen.format(entry.amount)
-        }
-    }
-
-    private var amountColor: Color {
-        switch entry.kind {
-        case .income, .settlement: return Palette.positive
-        case .expense: return entry.isRefund ? Palette.positive : Palette.textPrimary
-        case .transfer, .payoff, .adjust: return Palette.textSecondary
         }
     }
 

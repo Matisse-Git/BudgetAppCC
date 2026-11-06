@@ -261,6 +261,16 @@ final class BillingTests: XCTestCase {
         XCTAssertEqual(muted.last?.shortfall, 0)
     }
 
+    func testClosedStatementsForTheFeed() {
+        let card = rakuten()
+        let october = Entry(kind: .expense, amount: 3000, date: day(2026, 10, 10), accountID: card.id)
+        let november = Entry(kind: .expense, amount: 1000, date: day(2026, 11, 2), accountID: card.id)
+        let ledger = Ledger(accounts: [card], entries: [october, november])
+        let events = Billing.closedStatements(ledger: ledger, from: day(2026, 9, 1), to: day(2026, 12, 5))
+        XCTAssertEqual(events.map(\.amount), [4000, 3000], "Nov 30 then Oct 31; nothing owed at the end of September")
+        XCTAssertEqual(events.first?.cycle.closingDate, day(2026, 11, 30, hour: 0))
+    }
+
     func testReminderDatesAreThreeAndOneDayBefore() {
         let dates = Billing.reminderDates(dueDate: day(2026, 12, 2, hour: 0), now: day(2026, 11, 18))
         XCTAssertEqual(dates, [day(2026, 11, 29, hour: 9), day(2026, 12, 1, hour: 9)])
