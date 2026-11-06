@@ -181,7 +181,7 @@ struct KeypadView: View {
     }
 
     /// The amount after pressing `key`. Returns the same amount when the key does nothing.
-    static func apply(_ key: String, to amount: Int) -> Int {
+    nonisolated static func apply(_ key: String, to amount: Int) -> Int {
         switch key {
         case "⌫":
             return amount / 10

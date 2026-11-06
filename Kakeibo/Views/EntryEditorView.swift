@@ -396,7 +396,9 @@ struct EntryDetailForm: View {
                 if entry.kind == .payoff {
                     Section {
                         Toggle("Confirmed", isOn: $entry.isConfirmed)
-                            .sensoryFeedback(trigger: entry.isConfirmed) { _, confirmed in confirmed ? .success : .selection }
+                            .sensoryFeedback(trigger: entry.isConfirmed) { _, confirmed in
+                                confirmed ? SensoryFeedback.success : SensoryFeedback.selection
+                            }
                     } footer: {
                         Text("Tick this once you've seen the real debit. Unconfirmed payoffs still move the money.")
                     }
