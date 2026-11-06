@@ -341,6 +341,7 @@ struct AccountDetailView: View {
         let entry = Entry(kind: .adjust, amount: delta, date: Date(), accountID: account.id)
         context.insert(entry)
         context.saveAndRefresh()
+        Haptics.success()
     }
 }
 
@@ -381,6 +382,7 @@ struct AccountEditView: View {
                 if kind == .topUp {
                     Section {
                         Toggle("Top-ups count as spending", isOn: $countsTopUp)
+                            .sensoryFeedback(.selection, trigger: countsTopUp)
                         if countsTopUp {
                             Picker("Category", selection: $topUpCategory) {
                                 Text("None").tag(UUID?.none)
@@ -411,6 +413,7 @@ struct AccountEditView: View {
                             }
                         }
                         Toggle("Record payoff automatically", isOn: $autoPayoff)
+                            .sensoryFeedback(.selection, trigger: autoPayoff)
                     }
                 }
                 Section {
@@ -421,6 +424,7 @@ struct AccountEditView: View {
                 if account != nil {
                     Section {
                         Toggle("Archived", isOn: $archived)
+                            .sensoryFeedback(.selection, trigger: archived)
                     } footer: {
                         Text("Archived accounts are hidden from pickers but keep their history.")
                     }

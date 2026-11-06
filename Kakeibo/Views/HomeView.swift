@@ -81,6 +81,7 @@ struct HomeView: View {
     private var monthPicker: some View {
         HStack(spacing: 4) {
             Button {
+                Haptics.selection()
                 withAnimation { monthOffset -= 1 }
             } label: {
                 Image(systemName: "chevron.left").frame(width: 32, height: 32)
@@ -91,6 +92,7 @@ struct HomeView: View {
                 .monospacedDigit()
                 .frame(minWidth: 130)
             Button {
+                Haptics.selection()
                 withAnimation { monthOffset += 1 }
             } label: {
                 Image(systemName: "chevron.right").frame(width: 32, height: 32)
@@ -395,6 +397,7 @@ private struct SpendingChart: View {
         }
         .chartLegend(.hidden)
         .chartXSelection(value: $selectedDay)
+        .sensoryFeedback(.selection, trigger: selectedDay) { _, new in new != nil }
     }
 }
 
@@ -637,6 +640,7 @@ struct EditHomeView: View {
                                 var updated = hiddenSet
                                 if shown { updated.remove(section) } else { updated.insert(section) }
                                 hidden = HomeSection.encode(HomeSection.allCases.filter { updated.contains($0) })
+                                Haptics.selection()
                             }
                         )) {
                             Label(section.title, systemImage: section.symbol)
@@ -646,6 +650,7 @@ struct EditHomeView: View {
                         var updated = sections
                         updated.move(fromOffsets: from, toOffset: to)
                         order = HomeSection.encode(updated)
+                        Haptics.lift()
                     }
                 } footer: {
                     Text("Drag to change the order. Turn a section off to hide it. The spending graph and quick actions always stay at the top.")
@@ -716,6 +721,7 @@ struct ReviewListView: View {
                                 Button("Looks right") {
                                     entry.needsReview = false
                                     context.saveAndRefresh()
+                                    Haptics.success()
                                 }
                                 .tint(.green)
                             }

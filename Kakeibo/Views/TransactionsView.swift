@@ -32,6 +32,7 @@ struct TransactionsView: View {
                                 Button("Delete", role: .destructive) {
                                     context.delete(entry)
                                     context.saveAndRefresh()
+                                    Haptics.warning()
                                 }
                             }
                         }

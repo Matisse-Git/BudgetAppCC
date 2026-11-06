@@ -243,3 +243,42 @@ final class InsightsTests: XCTestCase {
         XCTAssertEqual(Yen.short(950), "¥950")
     }
 }
+
+final class FeedbackLogicTests: XCTestCase {
+    func testKeypadReportsKeysThatDoNothing() {
+        XCTAssertEqual(KeypadView.apply("5", to: 12), 125)
+        XCTAssertEqual(KeypadView.apply("⌫", to: 125), 12)
+        XCTAssertEqual(KeypadView.apply("000", to: 3), 3_000)
+        // These leave the amount unchanged, which is what triggers the "blocked" bump.
+        XCTAssertEqual(KeypadView.apply("⌫", to: 0), 0)
+        XCTAssertEqual(KeypadView.apply("0", to: 0), 0)
+        XCTAssertEqual(KeypadView.apply("000", to: 0), 0)
+        XCTAssertEqual(KeypadView.apply("000", to: 2_000_000), 2_000_000)
+        XCTAssertEqual(KeypadView.apply("7", to: 100_000_000), 100_000_000)
+    }
+
+    func testOverBudgetUsesMyShareAndTheEntrysMonth() {
+        let bank = Account(name: "Bank", kind: .bank)
+        let food = BudgetCategory(name: "Restaurants", emoji: "🍜", kind: .expense, sortOrder: 0, monthlyBudget: 10_000)
+        let other = BudgetCategory(name: "Other", emoji: "📦", kind: .expense, sortOrder: 1)
+        let early = Entry(kind: .expense, amount: 8_000, date: day(2026, 11, 2), accountID: bank.id, categoryID: food.id)
+        let shared = Entry(kind: .expense, amount: 6_000, date: day(2026, 11, 9), accountID: bank.id, categoryID: food.id)
+        shared.partnerShare = 3_000
+        let lastMonth = Entry(kind: .expense, amount: 50_000, date: day(2026, 10, 20), accountID: bank.id, categoryID: food.id)
+        let unbudgeted = Entry(kind: .expense, amount: 99_000, date: day(2026, 11, 3), accountID: bank.id, categoryID: other.id)
+
+        let under = Ledger(accounts: [bank], categories: [food, other], entries: [early, lastMonth, unbudgeted])
+        XCTAssertFalse(under.isOverBudget(categoryID: food.id, inMonthOf: day(2026, 11, 2)))
+        XCTAssertTrue(under.isOverBudget(categoryID: food.id, inMonthOf: day(2026, 10, 20)))
+        XCTAssertFalse(under.isOverBudget(categoryID: other.id, inMonthOf: day(2026, 11, 3)), "No budget is never over")
+
+        // 8,000 + my 3,000 of the shared dinner = 11,000 > 10,000.
+        let over = Ledger(accounts: [bank], categories: [food, other], entries: [early, shared])
+        XCTAssertTrue(over.isOverBudget(categoryID: food.id, inMonthOf: day(2026, 11, 9)))
+
+        let refund = Entry(kind: .expense, amount: 2_000, date: day(2026, 11, 10), accountID: bank.id, categoryID: food.id)
+        refund.isRefund = true
+        let backUnder = Ledger(accounts: [bank], categories: [food, other], entries: [early, shared, refund])
+        XCTAssertFalse(backUnder.isOverBudget(categoryID: food.id, inMonthOf: day(2026, 11, 10)))
+    }
+}

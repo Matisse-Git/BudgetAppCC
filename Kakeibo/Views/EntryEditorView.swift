@@ -44,6 +44,8 @@ struct EntryEditorView: View {
     @State private var customShare = 0
     @State private var isRefund = false
     @State private var loaded = false
+    /// Set once the starting values are in, so filling them in doesn't vibrate.
+    @State private var ready = false
     @State private var confirmDelete = false
 
     private var editing: Entry? {
@@ -134,6 +136,12 @@ struct EntryEditorView: View {
                 Button("Delete", role: .destructive, action: deleteEntry)
             }
             .onAppear(perform: load)
+            .sensoryFeedback(.selection, trigger: kind) { _, _ in ready }
+            .sensoryFeedback(.selection, trigger: split) { _, _ in ready }
+            .sensoryFeedback(.selection, trigger: isRefund) { _, _ in ready }
+            .sensoryFeedback(.selection, trigger: accountID) { _, _ in ready }
+            .sensoryFeedback(.selection, trigger: toAccountID) { _, _ in ready }
+            .sensoryFeedback(.selection, trigger: Calendar.kakeibo.startOfDay(for: date)) { _, _ in ready }
         }
     }
 
@@ -265,6 +273,8 @@ struct EntryEditorView: View {
     private func load() {
         guard !loaded else { return }
         loaded = true
+        Haptics.prepare()
+        defer { DispatchQueue.main.async { ready = true } }
         if let entry = editing {
             kind = entry.kind
             amount = entry.amount
@@ -310,14 +320,27 @@ struct EntryEditorView: View {
         entry.needsReview = false
         if editing == nil { context.insert(entry) }
         context.saveAndRefresh()
-        Haptics.success()
+        if endsOverBudget(entry) {
+            Haptics.warning()
+        } else {
+            Haptics.success()
+        }
         dismiss()
+    }
+
+    /// A spending entry that leaves its category over budget gets a warning buzz instead of success.
+    private func endsOverBudget(_ entry: Entry) -> Bool {
+        guard entry.kind == .expense, !entry.isRefund, entry.myShare > 0 else { return false }
+        let all = (try? context.fetch(FetchDescriptor<Entry>())) ?? []
+        return Ledger(accounts: accounts, categories: categories, entries: all)
+            .isOverBudget(categoryID: entry.categoryID, inMonthOf: entry.date)
     }
 
     private func deleteEntry() {
         guard let entry = editing else { return }
         context.delete(entry)
         context.saveAndRefresh()
+        Haptics.warning()
         dismiss()
     }
 }
@@ -356,6 +379,7 @@ struct EntryDetailForm: View {
                 if entry.kind == .payoff {
                     Section {
                         Toggle("Confirmed", isOn: $entry.isConfirmed)
+                            .sensoryFeedback(trigger: entry.isConfirmed) { _, confirmed in confirmed ? .success : .selection }
                     } footer: {
                         Text("Tick this once you've seen the real debit. Unconfirmed payoffs still move the money.")
                     }
@@ -382,6 +406,7 @@ struct EntryDetailForm: View {
                 Button("Delete", role: .destructive) {
                     context.delete(entry)
                     context.saveAndRefresh()
+                    Haptics.warning()
                     dismiss()
                 }
             }

@@ -21,9 +21,57 @@ extension View {
     func cardStyle() -> some View { modifier(CardStyle()) }
 }
 
+/// The app's vocabulary of vibrations. Generators are kept alive and re-prepared after each use,
+/// so the Taptic Engine is warm and fires without delay. iOS's System Haptics switch turns them all off.
+@MainActor
 enum Haptics {
-    static func success() { UINotificationFeedbackGenerator().notificationOccurred(.success) }
-    static func tap() { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+    private static let keyGenerator = UIImpactFeedbackGenerator(style: .soft)
+    private static let bumpGenerator = UIImpactFeedbackGenerator(style: .rigid)
+    private static let liftGenerator = UIImpactFeedbackGenerator(style: .medium)
+    private static let selectionGenerator = UISelectionFeedbackGenerator()
+    private static let notificationGenerator = UINotificationFeedbackGenerator()
+
+    /// Warm up everything, e.g. when the add screen appears.
+    static func prepare() {
+        keyGenerator.prepare()
+        bumpGenerator.prepare()
+        selectionGenerator.prepare()
+        notificationGenerator.prepare()
+    }
+
+    /// A number-pad key: a very light, soft tick.
+    static func key() {
+        keyGenerator.impactOccurred(intensity: 0.55)
+        keyGenerator.prepare()
+    }
+
+    /// A key that did nothing (backspace on ¥0, digit limit reached).
+    static func blocked() {
+        bumpGenerator.impactOccurred(intensity: 0.6)
+        bumpGenerator.prepare()
+    }
+
+    /// A choice changed: a tab-like picker, a menu option, a toggle, a month.
+    static func selection() {
+        selectionGenerator.selectionChanged()
+        selectionGenerator.prepare()
+    }
+
+    /// Picking up or dropping a row while reordering.
+    static func lift() {
+        liftGenerator.impactOccurred(intensity: 0.7)
+    }
+
+    static func success() {
+        notificationGenerator.notificationOccurred(.success)
+        notificationGenerator.prepare()
+    }
+
+    /// Saved, but worth noticing (over budget) or destructive (delete).
+    static func warning() {
+        notificationGenerator.notificationOccurred(.warning)
+        notificationGenerator.prepare()
+    }
 }
 
 /// Share sheet for exported files.
@@ -123,13 +171,25 @@ struct KeypadView: View {
     }
 
     private func press(_ key: String) {
+        let next = KeypadView.apply(key, to: amount)
+        if next == amount {
+            Haptics.blocked()
+        } else {
+            Haptics.key()
+        }
+        amount = next
+    }
+
+    /// The amount after pressing `key`. Returns the same amount when the key does nothing.
+    static func apply(_ key: String, to amount: Int) -> Int {
         switch key {
         case "⌫":
-            amount /= 10
+            return amount / 10
         case "000":
-            if amount > 0 && amount < 1_000_000 { amount *= 1000 }
+            return amount > 0 && amount < 1_000_000 ? amount * 1000 : amount
         default:
-            if let digit = Int(key), amount < 100_000_000 { amount = amount * 10 + digit }
+            if let digit = Int(key), amount < 100_000_000 { return amount * 10 + digit }
+            return amount
         }
     }
 }

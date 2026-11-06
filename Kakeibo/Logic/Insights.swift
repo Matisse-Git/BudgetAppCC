@@ -139,3 +139,15 @@ enum HomeSection: String, CaseIterable, Identifiable {
         sections.map(\.rawValue).joined(separator: ",")
     }
 }
+
+extension Ledger {
+    /// True when my spending in this category, for the month containing `date`, is above its monthly budget.
+    /// Categories without a budget, archived ones and income categories are never over.
+    func isOverBudget(categoryID: UUID?, inMonthOf date: Date, calendar: Calendar = .kakeibo) -> Bool {
+        guard let categoryID,
+              let category = categories.first(where: { $0.id == categoryID }),
+              category.kind == .expense, !category.isArchived, category.monthlyBudget > 0 else { return false }
+        let interval = Ledger.monthInterval(containing: date, calendar: calendar)
+        return (spendingByCategory(in: interval)[categoryID] ?? 0) > category.monthlyBudget
+    }
+}

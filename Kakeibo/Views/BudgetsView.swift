@@ -209,6 +209,7 @@ private struct MonthsChart: View {
                 }
             }
             .chartXSelection(value: $selected)
+            .sensoryFeedback(.selection, trigger: selected) { _, new in new != nil }
             .frame(height: 170)
 
             HStack(spacing: 16) {

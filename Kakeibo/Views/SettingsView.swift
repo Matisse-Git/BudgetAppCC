@@ -78,6 +78,7 @@ struct SettingsView: View {
                         try Backup.restore(from: data, into: context)
                         Maintenance.run(context, autoPayoffs: false)
                         message = "Backup restored."
+                        Haptics.success()
                     } catch {
                         message = "Restore failed: \(error.localizedDescription)"
                     }
@@ -189,6 +190,7 @@ struct CategoriesView: View {
             category.sortOrder = index + (kind == .income ? 100 : 0)
         }
         try? context.save()
+        Haptics.lift()
     }
 }
 
@@ -223,6 +225,7 @@ struct CategoryEditView: View {
                 if category != nil {
                     Section {
                         Toggle("Archived", isOn: $archived)
+                            .sensoryFeedback(.selection, trigger: archived)
                     } footer: {
                         Text("Archived categories disappear from the add screen but keep their history.")
                     }
