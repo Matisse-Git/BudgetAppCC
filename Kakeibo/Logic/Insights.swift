@@ -151,3 +151,26 @@ extension Ledger {
         return (spendingByCategory(in: interval)[categoryID] ?? 0) > category.monthlyBudget
     }
 }
+
+/// How the Budgets tab splits categories: the ones with a budget are always listed, the rest
+/// sit behind "See all categories".
+struct BudgetListing {
+    /// Active expense categories with a monthly budget, in their usual order.
+    let budgeted: [BudgetCategory]
+    /// Active expense categories without a budget, plus archived ones that have spending this month.
+    let unbudgeted: [BudgetCategory]
+    /// My spending this month in `unbudgeted`.
+    let unbudgetedSpent: Int
+
+    init(categories: [BudgetCategory], spending: [UUID: Int]) {
+        let expenses = categories.filter { $0.kind == .expense }
+        budgeted = expenses.filter { !$0.isArchived && $0.monthlyBudget > 0 }
+        unbudgeted = expenses.filter { category in
+            category.isArchived ? (spending[category.id] ?? 0) != 0 : category.monthlyBudget <= 0
+        }
+        unbudgetedSpent = unbudgeted.reduce(0) { $0 + (spending[$1.id] ?? 0) }
+    }
+
+    /// With no budgets set at all, hiding everything would leave an empty list, so show it all.
+    var showsEverything: Bool { budgeted.isEmpty }
+}

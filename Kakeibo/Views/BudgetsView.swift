@@ -7,6 +7,8 @@ struct BudgetsView: View {
     @Query(sort: \Account.sortOrder) private var accounts: [Account]
     @Query(sort: \BudgetCategory.sortOrder) private var categories: [BudgetCategory]
     @Query(sort: \Entry.date, order: .reverse) private var entries: [Entry]
+    /// Categories without a budget are tucked away until asked for.
+    @State private var showAll = DemoMode.screen == "budgets-all"
 
     var body: some View {
         let ledger = Ledger(accounts: accounts, categories: categories, entries: entries)
@@ -22,13 +24,8 @@ struct BudgetsView: View {
                     }
                     VStack(spacing: 10) {
                         SectionHeader(title: "Categories")
-                        RowsCard {
-                            ForEach(Array(shown.enumerated()), id: \.element.id) { index, category in
-                                if index > 0 { RowDivider(inset: 48) }
-                                CategoryBudgetRow(category: category, spent: summary.spending[category.id] ?? 0, compact: true)
-                                    .padding(.vertical, 12)
-                            }
-                        }
+                        CategoriesCard(listing: BudgetListing(categories: categories, spending: summary.spending),
+                                       spending: summary.spending, showAll: $showAll)
                     }
                 }
                 .padding(.horizontal)
@@ -42,6 +39,53 @@ struct BudgetsView: View {
                         CategoriesView()
                     }
                 }
+            }
+        }
+    }
+}
+
+/// Categories with a budget, then a "See all categories" row that reveals the ones without.
+private struct CategoriesCard: View {
+    let listing: BudgetListing
+    let spending: [UUID: Int]
+    @Binding var showAll: Bool
+
+    var body: some View {
+        let expanded = showAll || listing.showsEverything
+        let rows = expanded ? listing.budgeted + listing.unbudgeted : listing.budgeted
+        RowsCard {
+            ForEach(Array(rows.enumerated()), id: \.element.id) { index, category in
+                if index > 0 { RowDivider(inset: 48) }
+                CategoryBudgetRow(category: category, spent: spending[category.id] ?? 0, compact: true)
+                    .padding(.vertical, 12)
+            }
+            if !listing.showsEverything && !listing.unbudgeted.isEmpty {
+                RowDivider(inset: 0)
+                Button {
+                    Haptics.selection()
+                    withAnimation(.snappy) { showAll.toggle() }
+                } label: {
+                    HStack {
+                        Text(showAll ? "Show budgeted only" : "See all categories")
+                            .foregroundStyle(Color.accentColor)
+                        Spacer()
+                        if !showAll {
+                            Text(listing.unbudgetedSpent != 0
+                                 ? "\(Yen.format(listing.unbudgetedSpent)) with no budget"
+                                 : "\(listing.unbudgeted.count) with no budget")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                        Image(systemName: "chevron.down")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                            .rotationEffect(.degrees(showAll ? 180 : 0))
+                    }
+                    .padding(.vertical, 14)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
         }
     }

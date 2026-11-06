@@ -282,3 +282,35 @@ final class FeedbackLogicTests: XCTestCase {
         XCTAssertFalse(backUnder.isOverBudget(categoryID: food.id, inMonthOf: day(2026, 11, 10)))
     }
 }
+
+final class BudgetListingTests: XCTestCase {
+    func testOnlyBudgetedCategoriesAreListedUpFront() {
+        let rent = BudgetCategory(name: "Rent", emoji: "🏠", kind: .expense, sortOrder: 0, monthlyBudget: 82_000)
+        let konbini = BudgetCategory(name: "Konbini", emoji: "🏪", kind: .expense, sortOrder: 1)
+        let food = BudgetCategory(name: "Supermarket", emoji: "🛒", kind: .expense, sortOrder: 2, monthlyBudget: 40_000)
+        let other = BudgetCategory(name: "Other", emoji: "📦", kind: .expense, sortOrder: 3)
+        let oldHobby = BudgetCategory(name: "Golf", emoji: "⛳️", kind: .expense, sortOrder: 4, monthlyBudget: 10_000)
+        oldHobby.isArchived = true
+        let quiet = BudgetCategory(name: "Gifts", emoji: "🎁", kind: .expense, sortOrder: 5)
+        quiet.isArchived = true
+        let salary = BudgetCategory(name: "Salary", emoji: "💴", kind: .income, sortOrder: 100)
+
+        let spending: [UUID: Int] = [rent.id: 82_000, konbini.id: 1_200, oldHobby.id: 3_000, salary.id: 999]
+        let listing = BudgetListing(categories: [rent, konbini, food, other, oldHobby, quiet, salary], spending: spending)
+
+        XCTAssertEqual(listing.budgeted.map(\.name), ["Rent", "Supermarket"])
+        XCTAssertEqual(listing.unbudgeted.map(\.name), ["Konbini", "Other", "Golf"],
+                       "Archived categories only show when they have spending this month")
+        XCTAssertEqual(listing.unbudgetedSpent, 4_200)
+        XCTAssertFalse(listing.showsEverything)
+    }
+
+    func testNoBudgetsAtAllShowsEverything() {
+        let a = BudgetCategory(name: "Rent", emoji: "🏠", kind: .expense, sortOrder: 0)
+        let b = BudgetCategory(name: "Other", emoji: "📦", kind: .expense, sortOrder: 1)
+        let listing = BudgetListing(categories: [a, b], spending: [b.id: 500])
+        XCTAssertTrue(listing.showsEverything)
+        XCTAssertEqual(listing.unbudgeted.count, 2)
+        XCTAssertEqual(listing.unbudgetedSpent, 500)
+    }
+}

@@ -62,8 +62,9 @@ enum DemoData {
         func category(_ name: String) -> UUID? { categories.first { $0.name == name }?.id }
 
         let budgets: [String: Int] = [
+            // Konbini, Subscriptions and Other have no budget, so Budgets tucks them behind "See all categories".
             "Rent": 82_000, "Utilities": 12_000, "Phone": 5_000, "Transport": 10_000, "Supermarket": 40_000,
-            "Konbini": 8_000, "Restaurants": 20_000, "Shopping": 15_000, "Subscriptions": 3_000, "Other": 5_000,
+            "Restaurants": 20_000, "Shopping": 15_000,
         ]
         for c in categories { c.monthlyBudget = budgets[c.name] ?? 0 }
 
