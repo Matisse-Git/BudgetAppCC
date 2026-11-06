@@ -3,7 +3,8 @@ import Foundation
 extension Ledger {
     /// Running total of my spending for each day of `interval`, stopping at `end` (exclusive) if given.
     /// Index 0 is the first day.
-    func cumulativeSpending(in interval: DateInterval, until end: Date? = nil, calendar: Calendar = .kakeibo) -> [Int] {
+    func cumulativeSpending(in interval: DateInterval, until end: Date? = nil, categoryID: UUID? = nil,
+                            calendar: Calendar = .kakeibo) -> [Int] {
         let limit = min(end ?? interval.end, interval.end)
         var totals: [Int] = []
         var running = 0
@@ -11,7 +12,8 @@ extension Ledger {
         while dayStart < limit {
             let next = min(calendar.date(byAdding: .day, value: 1, to: dayStart) ?? interval.end, interval.end)
             guard next > dayStart else { break }
-            running += totalSpending(in: DateInterval(start: dayStart, end: next))
+            let day = DateInterval(start: dayStart, end: next)
+            running += categoryID.map { spendingByCategory(in: day)[$0] ?? 0 } ?? totalSpending(in: day)
             totals.append(running)
             dayStart = next
         }
@@ -81,14 +83,81 @@ struct MonthTotal: Identifiable {
 }
 
 extension Ledger {
-    func monthTotals(count: Int, now: Date = Date(), calendar: Calendar = .kakeibo) -> [MonthTotal] {
+    /// Spending per month for the last `count` months (this one included), optionally one category only.
+    func monthTotals(count: Int, now: Date = Date(), categoryID: UUID? = nil, calendar: Calendar = .kakeibo) -> [MonthTotal] {
         let thisMonth = Ledger.monthInterval(containing: now, calendar: calendar).start
         return (0..<count).reversed().compactMap { back in
             guard let start = calendar.date(byAdding: .month, value: -back, to: thisMonth) else { return nil }
             let interval = Ledger.monthInterval(containing: start, calendar: calendar)
-            return MonthTotal(start: start, spent: totalSpending(in: interval), isCurrent: back == 0)
+            let spent = categoryID.map { spendingByCategory(in: interval)[$0] ?? 0 } ?? totalSpending(in: interval)
+            return MonthTotal(start: start, spent: spent, isCurrent: back == 0)
         }
     }
+
+    func totalIncome(in interval: DateInterval) -> Int {
+        incomeByCategory(in: interval).values.reduce(0, +)
+    }
+}
+
+/// The Trends view: this month's running total against last month and the recent average, monthly
+/// totals with a projection, category changes over the same days, and what was kept last month.
+struct SpendingTrends {
+    /// Running total by day this month, up to today.
+    let current: [Int]
+    /// Running total by day for all of last month.
+    let previous: [Int]
+    /// Average running total by day over the last five months that had any spending (31 values).
+    let average: [Int]
+    let averageMonths: Int
+    /// The last six months, this one last.
+    let months: [MonthTotal]
+    /// Average monthly spending over the months before this one that had any.
+    let averageMonthly: Int
+    /// This month at its daily rate so far.
+    let projected: Int
+    let daysInMonth: Int
+    /// Budgeted categories against the same days last month, biggest drop first.
+    let categoryChanges: [CategoryPace]
+    /// Last month's income, spending and what was kept.
+    let lastMonthStart: Date
+    let lastMonthIncome: Int
+    let lastMonthSpent: Int
+
+    init(ledger: Ledger, now: Date = Date(), calendar: Calendar = .kakeibo) {
+        let summary = MonthSummary(ledger: ledger, month: now, now: now, calendar: calendar)
+        let pace = BudgetPace(ledger: ledger, month: now, now: now, calendar: calendar)
+        let thisMonth = summary.interval.start
+
+        var curves: [[Int]] = []
+        for back in 1...5 {
+            guard let start = calendar.date(byAdding: .month, value: -back, to: thisMonth) else { continue }
+            let curve = ledger.cumulativeSpending(in: Ledger.monthInterval(containing: start, calendar: calendar), calendar: calendar)
+            guard let last = curve.last, last > 0 else { continue }
+            curves.append(curve + Array(repeating: last, count: max(31 - curve.count, 0)))
+        }
+        average = curves.isEmpty ? [] : (0..<31).map { day in curves.reduce(0) { $0 + $1[day] } / curves.count }
+        averageMonths = curves.count
+
+        let totals = ledger.monthTotals(count: 6, now: now, calendar: calendar)
+        let past = totals.filter { !$0.isCurrent && $0.spent > 0 }
+        current = summary.cumulative
+        previous = summary.previous
+        months = totals
+        averageMonthly = past.isEmpty ? 0 : past.reduce(0) { $0 + $1.spent } / past.count
+        projected = pace.projected
+        daysInMonth = summary.daysInMonth
+        categoryChanges = (pace.needsAttention + pace.onTrack)
+            .filter { $0.vsPrevious != 0 }
+            .sorted { $0.vsPrevious < $1.vsPrevious }
+
+        let lastStart = calendar.date(byAdding: .month, value: -1, to: thisMonth) ?? thisMonth
+        let lastInterval = Ledger.monthInterval(containing: lastStart, calendar: calendar)
+        lastMonthStart = lastStart
+        lastMonthIncome = ledger.totalIncome(in: lastInterval)
+        lastMonthSpent = ledger.totalSpending(in: lastInterval)
+    }
+
+    var kept: Int { lastMonthIncome - lastMonthSpent }
 }
 
 extension Ledger {

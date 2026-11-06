@@ -441,6 +441,23 @@ final class PaceTests: XCTestCase {
         XCTAssertEqual(october.spent, 31_200)
     }
 
+    func testTrendsAverageProjectionAndKept() {
+        let ledger = ledger()
+        let salary = BudgetCategory(name: "Salary", emoji: "", kind: .income, sortOrder: 100)
+        let bank = ledger.accounts[0]
+        let pay = Entry(kind: .income, amount: 300_000, date: day(2026, 10, 25), accountID: bank.id, categoryID: salary.id)
+        let withPay = Ledger(accounts: ledger.accounts, categories: ledger.categories + [salary], entries: ledger.entries + [pay])
+        let trends = SpendingTrends(ledger: withPay, now: day(2026, 11, 18))
+        XCTAssertEqual(trends.averageMonths, 1, "Only October had spending")
+        XCTAssertEqual(trends.average.count, 31)
+        XCTAssertEqual(trends.average.last, 31_200)
+        XCTAssertEqual(trends.averageMonthly, 31_200)
+        XCTAssertEqual(trends.projected, 154_660 * 30 / 18)
+        XCTAssertEqual(trends.kept, 300_000 - 31_200)
+        XCTAssertEqual(trends.categoryChanges.first?.category.name, "Dining Out", "Ascending: +¥2,500 is the smallest change")
+        XCTAssertEqual(trends.categoryChanges.last?.category.name, "Rent")
+    }
+
     func testCategoryPaceStatus() {
         let food = BudgetCategory(name: "Food", emoji: "", kind: .expense, sortOrder: 0, monthlyBudget: 30_000)
         XCTAssertEqual(BudgetPace.categoryPace(food, spent: 10_000, elapsed: 15, days: 30, previous: 0).status, .onTrack)

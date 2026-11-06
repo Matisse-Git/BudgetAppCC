@@ -87,8 +87,8 @@ struct SummaryView: View {
             CardList {
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                     if index > 0 { ListDivider() }
-                    Button {
-                        tab = .budgets
+                    NavigationLink {
+                        CategoryDetailView(category: item.category, month: pace.interval.start)
                     } label: {
                         AttentionRow(item: item, monthStart: pace.interval.start)
                     }

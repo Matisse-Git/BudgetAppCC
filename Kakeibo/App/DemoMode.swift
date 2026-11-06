@@ -19,6 +19,7 @@ struct DemoScreen: View {
     let name: String
     @Query(sort: \Account.sortOrder) private var accounts: [Account]
     @Query(sort: \Entry.date, order: .reverse) private var entries: [Entry]
+    @Query(sort: \BudgetCategory.sortOrder) private var categories: [BudgetCategory]
 
     var body: some View {
         if name == "edit-accounts" {
@@ -36,6 +37,12 @@ struct DemoScreen: View {
             case "card":
                 if let card = accounts.first(where: { $0.name == "Rakuten Card" }) {
                     AccountDetailView(account: card)
+                } else {
+                    ProgressView()
+                }
+            case "category":
+                if let category = categories.first(where: { $0.name == "Restaurants" }) {
+                    CategoryDetailView(category: category, month: Date())
                 } else {
                     ProgressView()
                 }
@@ -66,7 +73,7 @@ struct DemoScreen: View {
         }
     }
 
-    static let standalone: Set<String> = ["card", "bank", "card-setup", "transaction", "partner", "settings", "categories", "review", "edit-accounts"]
+    static let standalone: Set<String> = ["category", "card", "bank", "card-setup", "transaction", "partner", "settings", "categories", "review", "edit-accounts"]
 }
 
 enum DemoData {

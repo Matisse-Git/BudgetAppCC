@@ -2,36 +2,43 @@ import Charts
 import SwiftData
 import SwiftUI
 
-/// This month's split by category, the last six months, and every category's budget.
+/// The Budgets tab: This Month (Budgets artboard) and Trends (Trends artboard).
 struct BudgetsView: View {
+    enum Page: String, CaseIterable, Identifiable {
+        case month, trends
+        var id: String { rawValue }
+    }
+
     @Query(sort: \Account.sortOrder) private var accounts: [Account]
     @Query(sort: \BudgetCategory.sortOrder) private var categories: [BudgetCategory]
     @Query(sort: \Entry.date, order: .reverse) private var entries: [Entry]
-    /// Categories without a budget are tucked away until asked for.
-    @State private var showAll = DemoMode.screen == "budgets-all"
+    @State private var page: Page = DemoMode.screen == "trends" ? .trends : .month
+    @State private var monthOffset = 0
 
     var body: some View {
+        let now = Date()
         let ledger = Ledger(accounts: accounts, categories: categories, entries: entries)
-        let summary = MonthSummary(ledger: ledger, month: Date())
-        let shown = categories.filter { $0.kind == .expense && (!$0.isArchived || (summary.spending[$0.id] ?? 0) != 0) }
         NavigationStack {
             ScrollView {
-                VStack(spacing: 26) {
-                    SplitCard(summary: summary, categories: shown)
-                    VStack(spacing: 10) {
-                        SectionHeader(title: "Last 6 months")
-                        MonthsChart(totals: ledger.monthTotals(count: 6), budget: summary.budget)
+                VStack(alignment: .leading, spacing: 0) {
+                    Picker("View", selection: $page) {
+                        Text("This Month").tag(Page.month)
+                        Text("Trends").tag(Page.trends)
                     }
-                    VStack(spacing: 10) {
-                        SectionHeader(title: "Categories")
-                        CategoriesCard(listing: BudgetListing(categories: categories, spending: summary.spending),
-                                       spending: summary.spending, showAll: $showAll)
+                    .pickerStyle(.segmented)
+                    .padding(.top, 4)
+                    switch page {
+                    case .month:
+                        let month = Calendar.kakeibo.date(byAdding: .month, value: monthOffset, to: now) ?? now
+                        ThisMonthBudgets(pace: BudgetPace(ledger: ledger, month: month, now: now), monthOffset: $monthOffset)
+                    case .trends:
+                        TrendsView(trends: SpendingTrends(ledger: ledger, now: now), now: now)
                     }
                 }
-                .padding(.horizontal)
+                .padding(.horizontal, Metrics.gutter)
                 .padding(.bottom, 24)
             }
-            .background(Color.groupedBackground)
+            .kScreenBackground()
             .navigationTitle("Budgets")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -40,50 +47,186 @@ struct BudgetsView: View {
                     }
                 }
             }
+            .sensoryFeedback(.selection, trigger: page)
         }
     }
 }
 
-/// Categories with a budget, then a "See all categories" row that reveals the ones without.
-private struct CategoriesCard: View {
-    let listing: BudgetListing
-    let spending: [UUID: Int]
-    @Binding var showAll: Bool
+// MARK: - This Month
+
+struct ThisMonthBudgets: View {
+    let pace: BudgetPace
+    @Binding var monthOffset: Int
 
     var body: some View {
-        let expanded = showAll || listing.showsEverything
-        let rows = expanded ? listing.budgeted + listing.unbudgeted : listing.budgeted
-        RowsCard {
-            ForEach(Array(rows.enumerated()), id: \.element.id) { index, category in
-                if index > 0 { RowDivider(inset: 48) }
-                CategoryBudgetRow(category: category, spent: spending[category.id] ?? 0, compact: true)
-                    .padding(.vertical, 12)
-            }
-            if !listing.showsEverything && !listing.unbudgeted.isEmpty {
-                RowDivider(inset: 0)
-                Button {
-                    Haptics.selection()
-                    withAnimation(.snappy) { showAll.toggle() }
-                } label: {
-                    HStack {
-                        Text(showAll ? "Show budgeted only" : "See all categories")
-                            .foregroundStyle(Color.accentColor)
-                        Spacer()
-                        if !showAll {
-                            Text(listing.unbudgetedSpent != 0
-                                 ? "\(Yen.format(listing.unbudgetedSpent)) with no budget"
-                                 : "\(listing.unbudgeted.count) with no budget")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
+        overview
+            .padding(.top, 16)
+        if !pace.needsAttention.isEmpty {
+            SectionTitle("Needs attention")
+                .padding(.top, Metrics.sectionSpacing)
+            categoryList(pace.needsAttention)
+                .padding(.top, 10)
+        }
+        if !pace.onTrack.isEmpty {
+            SectionTitle("On track")
+                .padding(.top, Metrics.sectionSpacing)
+            categoryList(pace.onTrack)
+                .padding(.top, 10)
+        }
+        if !pace.unbudgeted.isEmpty {
+            SectionTitle(pace.needsAttention.isEmpty && pace.onTrack.isEmpty ? "Spending" : "No budget set")
+                .padding(.top, Metrics.sectionSpacing)
+            CardList {
+                ForEach(Array(pace.unbudgeted.enumerated()), id: \.element.category.id) { index, item in
+                    if index > 0 { ListDivider(inset: 56) }
+                    NavigationLink {
+                        CategoryDetailView(category: item.category, month: pace.interval.start)
+                    } label: {
+                        HStack(spacing: 12) {
+                            CategoryIcon(category: item.category, size: 28)
+                            Text(item.category.name)
+                                .foregroundStyle(Palette.textPrimary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Text(Yen.format(item.spent))
+                                .fontWeight(.semibold)
                                 .monospacedDigit()
+                                .foregroundStyle(Palette.textPrimary)
                         }
-                        Image(systemName: "chevron.down")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(.tertiary)
-                            .rotationEffect(.degrees(showAll ? 180 : 0))
+                        .padding(.horizontal, 16)
+                        .frame(minHeight: Metrics.compactRowHeight)
+                        .contentShape(Rectangle())
                     }
-                    .padding(.vertical, 14)
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.top, 10)
+            Text("Still counted in spending and trends. Tap Edit to give any category a budget.")
+                .font(.footnote)
+                .foregroundStyle(Palette.textSecondary)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+        }
+    }
+
+    private var monthTitle: String {
+        pace.interval.start.formatted(.dateTime.month(.wide).year())
+    }
+
+    private var overview: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text(monthTitle)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Palette.textPrimary)
+                Spacer()
+                HStack(spacing: 4) {
+                    monthButton("chevron.left", label: "Previous month", enabled: true) { monthOffset -= 1 }
+                    monthButton("chevron.right", label: "Next month", enabled: monthOffset < 0) { monthOffset += 1 }
+                }
+            }
+            .frame(height: 30)
+            if pace.budget > 0 {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(Yen.format(abs(pace.left)))
+                        .font(.kDetailAmount)
+                        .tracking(-1)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                        .foregroundStyle(pace.left < 0 ? Palette.negativeText : Palette.textPrimary)
+                    Text("\(pace.left < 0 ? "over" : "left of") \(Yen.format(pace.budget))")
+                        .foregroundStyle(Palette.textSecondary)
+                        .monospacedDigit()
+                }
+                .padding(.top, 10)
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(Yen.format(pace.spent))
+                        .font(.kDetailAmount)
+                        .tracking(-1)
+                        .monospacedDigit()
+                        .foregroundStyle(Palette.textPrimary)
+                    Text("spent").foregroundStyle(Palette.textSecondary)
+                }
+                .padding(.top, 10)
+            }
+            SplitBar(pace: pace)
+                .padding(.top, 14)
+            HStack(alignment: .top, spacing: 10) {
+                stat("Spent", Yen.format(pace.spent))
+                if pace.isCurrentMonth && pace.budget > 0 {
+                    stat(pace.daysRemaining == 1 ? "1 day left" : "\(pace.daysRemaining) days left",
+                         pace.perDay > 0 ? "\(Yen.format(pace.perDay))/day" : "–")
+                } else {
+                    stat("Budget", pace.budget > 0 ? Yen.format(pace.budget) : "–")
+                }
+                stat("vs \(pace.comparisonLabel())", pace.previousSameDays > 0 ? Yen.format(pace.vsPrevious, showPlus: true) : "–",
+                     color: pace.previousSameDays == 0 ? Palette.textPrimary : (pace.vsPrevious <= 0 ? Palette.positive : Palette.warning))
+            }
+            .padding(.top, 12)
+            if pace.budget > 0 && pace.isCurrentMonth {
+                statusChip
+                    .padding(.top, 14)
+            }
+        }
+        .kCard(padding: 18)
+    }
+
+    @ViewBuilder
+    private var statusChip: some View {
+        let gap = abs(pace.pace - pace.spent)
+        switch pace.status {
+        case .onTrack:
+            StatusChip(text: "On track · \(Yen.format(gap)) under today's pace", tint: Palette.positive, dot: true)
+        case .atRisk:
+            StatusChip(text: "Ahead of pace · \(Yen.format(gap)) over today's pace", tint: Palette.warning, dot: true)
+        case .over:
+            StatusChip(text: "Over budget by \(Yen.format(-pace.left))", tint: Palette.negativeText, dot: true)
+        }
+    }
+
+    private func monthButton(_ symbol: String, label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button {
+            Haptics.selection()
+            withAnimation(.snappy) { action() }
+        } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(enabled ? Palette.textPrimary : Palette.textTertiary)
+                .frame(width: 30, height: 30)
+                .background(Circle().fill(enabled ? Palette.controlFill : Palette.controlFill.opacity(0.5)))
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .accessibilityLabel(label)
+    }
+
+    private func stat(_ title: String, _ value: String, color: Color = Palette.textPrimary) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(title)
+                .font(.footnote)
+                .foregroundStyle(Palette.textSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Text(value)
+                .font(.body.weight(.semibold))
+                .monospacedDigit()
+                .foregroundStyle(color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func categoryList(_ items: [CategoryPace]) -> some View {
+        CardList {
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                if index > 0 { ListDivider() }
+                NavigationLink {
+                    CategoryDetailView(category: item.category, month: pace.interval.start)
+                } label: {
+                    BudgetCategoryRow(item: item, showsPace: pace.isCurrentMonth, monthStart: pace.interval.start,
+                                      comparison: pace.comparisonLabel())
                 }
                 .buttonStyle(.plain)
             }
@@ -91,240 +234,356 @@ private struct CategoriesCard: View {
     }
 }
 
-/// One bar split by category, measured against the whole budget.
-private struct SplitCard: View {
-    let summary: MonthSummary
-    let categories: [BudgetCategory]
+/// This month's spending split by category on one bar, scaled to the whole budget, with today's pace.
+struct SplitBar: View {
+    let pace: BudgetPace
 
     private struct Segment: Identifiable {
-        let id: String
-        let title: String
+        let id: UUID
         let value: Int
         let color: Color
     }
 
-    private var segments: [Segment] {
-        var named: [Segment] = []
-        var rest = 0
-        let sorted = categories.sorted { (summary.spending[$0.id] ?? 0) > (summary.spending[$1.id] ?? 0) }
-        for category in sorted {
-            let value = summary.spending[category.id] ?? 0
-            guard value > 0 else { continue }
-            let look = CategoryLook.of(category)
-            if named.count < 6 {
-                named.append(Segment(id: category.id.uuidString, title: category.name, value: value, color: look.tint))
-            } else {
-                rest += value
-            }
-        }
-        if rest > 0 {
-            named.append(Segment(id: "rest", title: "Everything else", value: rest, color: .categoryNeutral))
-        }
-        return named
-    }
-
     var body: some View {
-        let parts = segments
-        let scale = max(summary.budget, summary.spent, 1)
-        let used = summary.budget > 0 ? Double(summary.spent) / Double(summary.budget) : 0
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .bottom) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("\(Date().formatted(.dateTime.month(.wide))) so far")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                    Text(Yen.format(summary.spent))
-                        .font(.system(size: 30, weight: .bold))
-                        .monospacedDigit()
-                }
-                Spacer()
-                if summary.budget > 0 {
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text("of \(Yen.format(summary.budget))")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                        Text("\(Int((used * 100).rounded()))% used")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(used > 1 ? Color.red : Color.green)
-                    }
-                    .monospacedDigit()
-                }
-            }
-
+        let segments = (pace.needsAttention + pace.onTrack).map { Segment(id: $0.id, value: $0.spent, color: CategoryLook.of($0.category).tint) }
+            + pace.unbudgeted.map { Segment(id: $0.category.id, value: $0.spent, color: CategoryLook.of($0.category).tint) }
+        let shown = segments.filter { $0.value > 0 }.sorted { $0.value > $1.value }
+        let scale = Double(max(pace.budget, pace.spent, 1))
+        let tick: Double? = pace.isCurrentMonth && pace.budget > 0 ? pace.paceFraction : nil
+        VStack(spacing: 0) {
             GeometryReader { geo in
-                let gaps = CGFloat(max(parts.count - 1, 0)) * 2
+                let gaps = CGFloat(max(shown.count - 1, 0)) * 2
                 let width = max(geo.size.width - gaps, 0)
-                HStack(spacing: 2) {
-                    ForEach(parts) { part in
-                        Rectangle()
-                            .fill(part.color)
-                            .frame(width: width * CGFloat(part.value) / CGFloat(scale))
+                ZStack(alignment: .leading) {
+                    HStack(spacing: 2) {
+                        ForEach(shown) { segment in
+                            Rectangle()
+                                .fill(segment.color)
+                                .frame(width: width * CGFloat(Double(segment.value) / scale))
+                        }
+                        Spacer(minLength: 0)
                     }
-                    Spacer(minLength: 0)
+                    .frame(height: 14)
+                    .background(Palette.track)
+                    .clipShape(Capsule())
+                    if let tick {
+                        RoundedRectangle(cornerRadius: 1)
+                            .fill(Palette.paceTick)
+                            .frame(width: 2, height: 20)
+                            .offset(x: geo.size.width * tick - 1)
+                    }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.barTrack)
-                .clipShape(Capsule())
             }
             .frame(height: 14)
-            .accessibilityHidden(true)
-
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)], alignment: .leading, spacing: 10) {
-                ForEach(parts) { part in
-                    legendRow(part.title, part.value, color: part.color)
+            if let tick {
+                GeometryReader { geo in
+                    Text("Today")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Palette.textSecondary)
+                        .fixedSize()
+                        .position(x: min(max(geo.size.width * tick, 16), max(geo.size.width - 16, 16)), y: 11)
                 }
-                if summary.budget > 0 {
-                    legendRow(summary.left >= 0 ? "Left" : "Over", abs(summary.left),
-                              color: summary.left >= 0 ? Color.barTrack : Color.red)
-                }
+                .frame(height: 17)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 18)
-        .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Color.card))
-    }
-
-    private func legendRow(_ title: String, _ value: Int, color: Color) -> some View {
-        HStack(spacing: 8) {
-            Circle().fill(color).frame(width: 8, height: 8)
-            Text(title).foregroundStyle(.secondary).lineLimit(1)
-            Spacer(minLength: 4)
-            Text(Yen.format(value)).monospacedDigit()
-        }
-        .font(.footnote)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Spent by category: " + shown.compactMap { segment in
+            (pace.needsAttention + pace.onTrack).first { $0.id == segment.id }.map { "\($0.category.name) \(Yen.format($0.spent))" }
+        }.joined(separator: ", "))
     }
 }
 
-/// Monthly totals as bars, with the budget as a dashed line. Tap or drag to read a month.
-private struct MonthsChart: View {
-    let totals: [MonthTotal]
-    let budget: Int
-    @State private var selected: String?
-
-    private func label(_ total: MonthTotal) -> String {
-        total.start.formatted(.dateTime.month(.abbreviated))
-    }
-
-    private var shown: MonthTotal? {
-        if let selected, let match = totals.first(where: { label($0) == selected }) { return match }
-        return totals.last
-    }
+/// A budgeted category: what's left (or over), a bar with today's pace and one line of context.
+struct BudgetCategoryRow: View {
+    let item: CategoryPace
+    var showsPace = true
+    let monthStart: Date
+    var comparison: String = ""
 
     var body: some View {
-        let top = max(budget, totals.map(\.spent).max() ?? 0, 1_000)
-        VStack(alignment: .leading, spacing: 12) {
-            if let shown {
-                HStack(spacing: 4) {
-                    Text(shown.isCurrent ? "\(label(shown)) so far" : label(shown)).foregroundStyle(.secondary)
-                    Text(Yen.format(shown.spent)).fontWeight(.semibold)
-                    if budget > 0 && shown.spent > budget {
-                        Text("· \(Yen.format(shown.spent - budget)) over").foregroundStyle(Color.shortfall)
-                    }
+        HStack(alignment: .top, spacing: 12) {
+            CategoryIcon(category: item.category)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(item.category.name)
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(Palette.textPrimary)
+                    Spacer(minLength: 8)
+                    Text(trailing)
+                        .font(.subheadline.weight(.semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(trailingColor)
                 }
-                .font(.footnote)
-                .monospacedDigit()
+                BudgetBar(fraction: item.fraction, pace: showsPace ? item.paceFraction : nil,
+                          tint: item.status == .atRisk ? Palette.warning : CategoryLook.of(item.category).tint, height: 6)
+                Text(caption)
+                    .font(.footnote)
+                    .foregroundStyle(Palette.textSecondary)
+                    .monospacedDigit()
             }
-            Chart {
-                ForEach(totals) { total in
-                    BarMark(
-                        x: .value("Month", label(total)),
-                        y: .value("Spent", total.spent),
-                        width: .fixed(28)
-                    )
-                    .foregroundStyle(budget > 0 && total.spent > budget ? Color.red : Color.accentColor)
-                    .opacity(barOpacity(total))
-                    .cornerRadius(6)
-                }
-                if budget > 0 {
-                    RuleMark(y: .value("Budget", budget))
-                        .foregroundStyle(Color.secondary)
-                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [2, 4]))
-                }
-            }
-            .chartYScale(domain: 0...Int(Double(top) * 1.1))
-            .chartYAxis {
-                AxisMarks(position: .trailing, values: budget > 0 ? [0, budget] : [0]) { value in
-                    AxisValueLabel {
-                        if let yen = value.as(Int.self) {
-                            Text(yen == 0 ? "0" : Yen.short(yen))
-                        }
-                    }
-                }
-            }
-            .chartXSelection(value: $selected)
-            .sensoryFeedback(.selection, trigger: selected) { _, new in new != nil }
-            .frame(height: 170)
-
-            HStack(spacing: 16) {
-                legend("Under budget", color: .accentColor, opacity: 1)
-                legend("Over budget", color: .red, opacity: 1)
-                legend("So far", color: .accentColor, opacity: 0.45)
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 18)
-        .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Color.card))
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
     }
 
-    private func barOpacity(_ total: MonthTotal) -> Double {
-        let base = total.isCurrent ? 0.45 : 1
-        guard let selected else { return base }
-        return label(total) == selected ? base : base * 0.5
+    private var trailing: String {
+        item.status == .over ? "\(Yen.format(item.spent - item.budget)) over" : "\(Yen.format(item.left)) left"
     }
 
-    private func legend(_ title: String, color: Color, opacity: Double) -> some View {
+    private var trailingColor: Color {
+        switch item.status {
+        case .over: return Palette.negativeText
+        case .atRisk: return Palette.warning
+        case .onTrack: return Palette.textPrimary
+        }
+    }
+
+    private var caption: String {
+        let base = "\(Yen.format(item.spent)) of \(Yen.format(item.budget))"
+        switch item.status {
+        case .over:
+            guard item.previousSameDays > 0, !comparison.isEmpty else { return base }
+            let delta = item.vsPrevious
+            return delta >= 0 ? "\(base) · \(Yen.format(delta)) more than \(comparison)" : "\(base) · \(Yen.format(-delta)) less than \(comparison)"
+        case .atRisk:
+            if let day = item.runsOutDay, let date = Calendar.kakeibo.date(byAdding: .day, value: day - 1, to: monthStart) {
+                return "At this pace it runs out around \(date.formatted(.dateTime.month(.abbreviated).day()))"
+            }
+            return "\(base) · ahead of today's pace"
+        case .onTrack:
+            return base
+        }
+    }
+}
+
+// MARK: - Trends
+
+struct TrendsView: View {
+    let trends: SpendingTrends
+    let now: Date
+
+    var body: some View {
+        spendingSoFar
+            .padding(.top, 16)
+        monthly
+            .padding(.top, 16)
+        if !trends.categoryChanges.isEmpty {
+            categoryChanges
+                .padding(.top, 16)
+        }
+        if trends.lastMonthIncome > 0 {
+            kept
+                .padding(.top, 16)
+        }
+    }
+
+    private var monthName: String { now.formatted(.dateTime.month(.wide)) }
+    private var previousName: String { trends.lastMonthStart.formatted(.dateTime.month(.wide)) }
+
+    private struct DayPoint: Identifiable {
+        let day: Int
+        let value: Int
+        let series: String
+        var id: String { "\(series)-\(day)" }
+    }
+
+    private var spendingSoFar: some View {
+        let today = trends.current.count
+        let comparisonEnd = min(today, trends.previous.count)
+        let previousSoFar = comparisonEnd > 0 ? trends.previous[comparisonEnd - 1] : 0
+        let spent = trends.current.last ?? 0
+        let monthShort = now.formatted(.dateTime.month(.abbreviated))
+        let previousShort = trends.lastMonthStart.formatted(.dateTime.month(.abbreviated))
+        let points = trends.current.enumerated().map { DayPoint(day: $0.offset + 1, value: $0.element, series: monthName) }
+            + trends.previous.enumerated().map { DayPoint(day: $0.offset + 1, value: $0.element, series: previousName) }
+            + trends.average.prefix(trends.daysInMonth).enumerated().map { DayPoint(day: $0.offset + 1, value: $0.element, series: "Average") }
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Spending so far").font(.subheadline.weight(.semibold)).foregroundStyle(Palette.textPrimary)
+                Spacer()
+                Text("\(monthShort) 1–\(today) · all categories").font(.footnote).foregroundStyle(Palette.textSecondary)
+            }
+            Text(Yen.format(spent))
+                .font(.kStat)
+                .tracking(-0.8)
+                .monospacedDigit()
+                .foregroundStyle(Palette.textPrimary)
+            if previousSoFar > 0 {
+                ComparisonLine(delta: spent - previousSoFar, label: "\(previousShort) 1–\(comparisonEnd)")
+            }
+            Chart(points) { point in
+                LineMark(x: .value("Day", point.day), y: .value("Spent", point.value), series: .value("Month", point.series))
+                    .foregroundStyle(color(point.series))
+                    .lineStyle(point.series == "Average"
+                               ? StrokeStyle(lineWidth: 1.5, dash: [4, 4])
+                               : StrokeStyle(lineWidth: point.series == monthName ? 2.5 : 2, lineCap: .round, lineJoin: .round))
+            }
+            .chartXScale(domain: 1...max(trends.daysInMonth, 2))
+            .chartXAxis {
+                AxisMarks(values: [1, 8, 15, 22, 29]) { _ in AxisValueLabel() }
+            }
+            .chartYAxis {
+                AxisMarks(position: .trailing) { value in
+                    AxisGridLine().foregroundStyle(Palette.separator)
+                    AxisValueLabel { if let yen = value.as(Int.self) { Text(yen == 0 ? "¥0" : Yen.short(yen)) } }
+                }
+            }
+            .chartLegend(.hidden)
+            .frame(height: 170)
+            .padding(.top, 12)
+            HStack(spacing: 14) {
+                legend(monthName, color: color(monthName))
+                legend(previousName, color: color(previousName))
+                if trends.averageMonths > 0 {
+                    HStack(spacing: 6) {
+                        Capsule().stroke(Palette.textSecondary, style: StrokeStyle(lineWidth: 1.5, dash: [3, 2])).frame(width: 16, height: 2)
+                        Text("\(trends.averageMonths)-month average")
+                    }
+                }
+            }
+            .font(.footnote)
+            .foregroundStyle(Palette.textSecondary)
+            .padding(.top, 10)
+        }
+        .kCard()
+    }
+
+    private func color(_ series: String) -> Color {
+        if series == monthName { return Palette.accentData }
+        if series == "Average" { return Palette.textSecondary }
+        return Hue.gray.color
+    }
+
+    private func legend(_ title: String, color: Color) -> some View {
         HStack(spacing: 6) {
-            RoundedRectangle(cornerRadius: 3).fill(color).opacity(opacity).frame(width: 10, height: 10)
+            Capsule().fill(color).frame(width: 16, height: 3)
             Text(title)
         }
     }
-}
 
-/// Icon, name, what's left, a thin bar and "¥x of ¥y".
-struct CategoryBudgetRow: View {
-    let category: BudgetCategory
-    let spent: Int
-    var compact = false
-
-    var body: some View {
-        let budget = category.isArchived ? 0 : category.monthlyBudget
-        let over = budget > 0 && spent > budget
-        let look = CategoryLook.of(category)
-        HStack(spacing: 12) {
-            CategoryTile(category: category, size: compact ? 36 : 40)
-            VStack(alignment: .leading, spacing: compact ? 7 : 8) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(category.name).font(compact ? .callout : .body)
-                    Spacer()
-                    Text(note(budget: budget, over: over))
-                        .font(compact ? .footnote : .subheadline)
-                        .fontWeight(over ? .semibold : .regular)
-                        .foregroundStyle(over ? Color.shortfall : Color.secondary)
-                        .monospacedDigit()
+    private var monthly: some View {
+        let label: (MonthTotal) -> String = { $0.start.formatted(.dateTime.month(.abbreviated)) }
+        return VStack(alignment: .leading, spacing: 0) {
+            Text("Monthly spending").font(.subheadline.weight(.semibold)).foregroundStyle(Palette.textPrimary)
+            Text(monthlySubtitle)
+                .font(.footnote)
+                .foregroundStyle(Palette.textSecondary)
+                .monospacedDigit()
+            Chart {
+                ForEach(trends.months) { total in
+                    if total.isCurrent && trends.projected > total.spent {
+                        BarMark(x: .value("Month", label(total)), y: .value("Spent", trends.projected), width: .fixed(28))
+                            .foregroundStyle(Palette.accentData.opacity(0.25))
+                            .cornerRadius(6)
+                            .annotation(position: .top) {
+                                Text("~" + String(Yen.short(trends.projected).dropFirst()))
+                                    .font(.caption2)
+                                    .foregroundStyle(Palette.textSecondary)
+                            }
+                    }
+                    BarMark(x: .value("Month", label(total)), y: .value("Spent", total.spent), width: .fixed(28))
+                        .foregroundStyle(total.isCurrent ? Palette.accentData : Hue.gray.color.opacity(0.6))
+                        .cornerRadius(6)
+                        .annotation(position: total.isCurrent && trends.projected > total.spent ? .overlay : .top) {
+                            Text(Yen.short(total.spent).dropFirst())
+                                .font(.caption2)
+                                .foregroundStyle(total.isCurrent ? Palette.textPrimary : Palette.textSecondary)
+                        }
                 }
-                if budget > 0 {
-                    ProgressBar(fraction: Double(spent) / Double(budget), isOver: over,
-                                tint: look.tint, height: compact ? 5 : 6)
-                }
-                if !compact && budget > 0 {
-                    Text("\(Yen.format(spent)) of \(Yen.format(budget))")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
+                if trends.averageMonthly > 0 {
+                    RuleMark(y: .value("Average", trends.averageMonthly))
+                        .foregroundStyle(Palette.textSecondary)
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [2, 4]))
                 }
             }
+            .chartYAxis(.hidden)
+            .frame(height: 170)
+            .padding(.top, 12)
         }
+        .kCard()
     }
 
-    private func note(budget: Int, over: Bool) -> String {
-        guard budget > 0 else { return Yen.format(spent) }
-        if over { return "\(Yen.format(spent - budget)) over" }
-        if !compact { return "\(Yen.format(budget - spent)) left" }
-        if spent == budget { return "Paid · \(Yen.format(spent))" }
-        if spent == 0 { return "Nothing yet · \(Yen.format(budget))" }
-        return "\(Yen.format(spent)) of \(Yen.format(budget))"
+    private var monthlySubtitle: String {
+        var parts: [String] = []
+        if trends.averageMonthly > 0 { parts.append("Average \(Yen.format(trends.averageMonthly))") }
+        parts.append("\(monthName) on pace for about \(Yen.format(trends.projected / 1_000 * 1_000))")
+        return parts.joined(separator: " · ")
+    }
+
+    private var categoryChanges: some View {
+        let biggest = Double(max(trends.categoryChanges.map { abs($0.vsPrevious) }.max() ?? 1, 1))
+        let previousShort = trends.lastMonthStart.formatted(.dateTime.month(.abbreviated))
+        return VStack(alignment: .leading, spacing: 0) {
+            Text("By category, vs \(previousShort) 1–\(trends.current.count)")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Palette.textPrimary)
+            Text("Same days, budgeted categories")
+                .font(.footnote)
+                .foregroundStyle(Palette.textSecondary)
+            VStack(spacing: 0) {
+                ForEach(trends.categoryChanges) { item in
+                    let less = item.vsPrevious < 0
+                    HStack(spacing: 8) {
+                        Text(item.category.name)
+                            .font(.subheadline)
+                            .foregroundStyle(Palette.textPrimary)
+                            .lineLimit(1)
+                            .frame(width: 128, alignment: .leading)
+                        GeometryReader { geo in
+                            let half = geo.size.width / 2
+                            let length = max(half * CGFloat(Double(abs(item.vsPrevious)) / biggest), 3)
+                            ZStack(alignment: .leading) {
+                                Rectangle()
+                                    .fill(Palette.textSecondary.opacity(0.45))
+                                    .frame(width: 1, height: 34)
+                                    .offset(x: half)
+                                UnevenRoundedRectangle(
+                                    topLeadingRadius: less ? 6 : 0, bottomLeadingRadius: less ? 6 : 0,
+                                    bottomTrailingRadius: less ? 0 : 6, topTrailingRadius: less ? 0 : 6, style: .continuous)
+                                    .fill(less ? Palette.info : Palette.warning)
+                                    .frame(width: length, height: 12)
+                                    .offset(x: less ? half - length : half)
+                            }
+                            .frame(maxHeight: .infinity)
+                        }
+                        Text(Yen.format(item.vsPrevious, showPlus: true))
+                            .font(.subheadline.weight(.semibold))
+                            .monospacedDigit()
+                            .foregroundStyle(less ? Palette.info : Palette.warning)
+                            .frame(width: 72, alignment: .trailing)
+                    }
+                    .frame(height: 34)
+                    .accessibilityElement(children: .combine)
+                }
+            }
+            .padding(.top, 12)
+            HStack(spacing: 16) {
+                HStack(spacing: 6) { RoundedRectangle(cornerRadius: 3).fill(Palette.info).frame(width: 10, height: 10); Text("Spent less") }
+                HStack(spacing: 6) { RoundedRectangle(cornerRadius: 3).fill(Palette.warning).frame(width: 10, height: 10); Text("Spent more") }
+            }
+            .font(.footnote)
+            .foregroundStyle(Palette.textSecondary)
+            .padding(.top, 12)
+        }
+        .kCard()
+    }
+
+    private var kept: some View {
+        let share = trends.lastMonthIncome > 0 ? Int((Double(trends.kept) / Double(trends.lastMonthIncome) * 100).rounded()) : 0
+        return VStack(alignment: .leading, spacing: 0) {
+            Text("Kept in \(previousName)").font(.subheadline.weight(.semibold)).foregroundStyle(Palette.textPrimary)
+            Text(Yen.format(trends.kept))
+                .font(.system(size: 28, weight: .bold))
+                .tracking(-0.6)
+                .monospacedDigit()
+                .foregroundStyle(trends.kept >= 0 ? Palette.positive : Palette.negativeText)
+            Text("\(share)% of income · \(Yen.format(trends.lastMonthIncome)) in, \(Yen.format(trends.lastMonthSpent)) spent")
+                .font(.footnote)
+                .foregroundStyle(Palette.textSecondary)
+                .monospacedDigit()
+        }
+        .kCard()
     }
 }

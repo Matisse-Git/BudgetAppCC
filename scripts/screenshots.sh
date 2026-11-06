@@ -33,6 +33,8 @@ shoot 02-add-entry add
 shoot 03-transactions transactions
 shoot 03b-transaction transaction
 shoot 04-budgets budgets
+shoot 04c-trends trends
+shoot 04d-category category
 shoot 05-accounts accounts
 shoot 05b-accounts-flat accounts-flat
 shoot 05c-edit-accounts edit-accounts
@@ -43,7 +45,6 @@ shoot 07-partner partner
 shoot 08-review review
 shoot 09-categories categories
 shoot 10-setup setup
-shoot 04b-budgets-all budgets-all
 xcrun simctl ui "$UDID" appearance dark
 shoot 12-home-dark home
 shoot 13-budgets-dark budgets

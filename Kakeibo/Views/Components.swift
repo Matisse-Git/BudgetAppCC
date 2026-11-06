@@ -91,26 +91,6 @@ struct ShareItem: Identifiable {
     let url: URL
 }
 
-struct ProgressBar: View {
-    let fraction: Double
-    let isOver: Bool
-    var tint: Color = .accentColor
-    var height: CGFloat = 6
-
-    var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color.barTrack)
-                Capsule()
-                    .fill(isOver ? Color.red : tint)
-                    .frame(width: geo.size.width * min(max(fraction, 0), 1))
-            }
-        }
-        .frame(height: height)
-        .accessibilityHidden(true)
-    }
-}
-
 /// Whole-yen number field.
 struct AmountField: View {
     let title: String
