@@ -39,17 +39,20 @@ struct PartnerView: View {
                     Button {
                         editing = entry
                     } label: {
-                        HStack {
-                            EntryRow(entry: entry, lookup: lookup, partnerName: partnerName)
-                        }
+                        TransactionRow(entry: entry, lookup: lookup, partnerName: partnerName, timeStyle: .relative)
                     }
                     .buttonStyle(.plain)
+                    .listRowInsets(EdgeInsets())
                     .swipeActions {
-                        Button("Repaid") { repaying = entry }.tint(.green)
+                        Button("Repaid") { repaying = entry }.tint(Palette.positive)
                     }
                     .overlay(alignment: .bottomTrailing) {
                         if let left = remaining[entry.id], left < entry.partnerShare {
-                            Text("\(Yen.format(left)) left").font(.caption2).foregroundStyle(.orange)
+                            Text("\(Yen.format(left)) left")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(Palette.warning)
+                                .padding(.trailing, 16)
+                                .padding(.bottom, 4)
                         }
                     }
                 }
@@ -64,9 +67,10 @@ struct PartnerView: View {
                         Button {
                             editing = entry
                         } label: {
-                            EntryRow(entry: entry, lookup: lookup, partnerName: partnerName)
+                            TransactionRow(entry: entry, lookup: lookup, partnerName: partnerName, timeStyle: .relative)
                         }
                         .buttonStyle(.plain)
+                        .listRowInsets(EdgeInsets())
                     }
                 }
             }

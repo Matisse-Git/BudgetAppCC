@@ -31,17 +31,22 @@ These decisions were agreed before any code was written. Update this file when a
 - **Top-up** accounts have a setting: "count top-ups as spending in [category]".
   - PASMO: on, counted as Transport. No balance and no ride logging.
   - Revolut and PayPay: off. Each purchase is logged on its own.
-- **Credit** accounts store a closing day (締め日), a payment day (支払日, in the following month) and the
-  account the bill is paid from.
-  - The card shows **"Due [date]: ¥X"** (closed statement, unpaid) and **"Next bill so far: ¥Y"**.
-  - Starting value: one "currently unpaid" number. It counts toward the next due amount.
+- **Credit** accounts store a closing day (締め日), a payment day (支払日), the payment month (same
+  month, next month (the usual) or the month after next), what happens when the payment day is a weekend
+  or a Japanese bank holiday (next business day by default, previous business day, or keep the date), the
+  account the bill is paid from, an optional credit limit, a colour (Blue, Teal, Raspberry, Amber, Violet,
+  Graphite) and two alert switches (payment reminder, shortfall warning).
+  - Accounts shows the closed statement due ("¥42,800 · Due Dec 2") and "Next bill so far ¥9,860".
+  - Starting values (card setup, also for a card nothing has been logged on yet): the unpaid statement
+    goes on the closed bill; "spent since" the last closing day goes on the bill that's building, as an
+    adjustment dated the day the card was added.
 - A purchase with Olive in debit mode is recorded on SMBC bank, not on Olive credit.
 - **Order and grouping.** Accounts appear in one custom order (`Account.sortOrder`, ties by creation date).
   Accounts tab → **Edit** (or Settings → Reorder accounts) drags them into place. Every account picker
   uses the same order, with credit cards first.
-  - **Group accounts by type** (Settings, also in the Edit sheet; `groupAccountsByType`, off by default)
-    splits the non-credit list into Bank, Top-up and Cash, in that fixed order. Off shows one "Money" list.
-    Credit cards are always the swipeable cards.
+  - **Group accounts by type** (Settings, also in the Edit sheet; `groupAccountsByType`, on by default since the canvas redesign)
+    splits the non-credit list into Bank accounts, Prepaid wallets and Cash, in that fixed order, each with
+    its total. Off shows one "Money" list. Credit cards are always their own list.
   - When grouped, you drag within a group. Reordering renumbers everything to match the screen, so the
     flat list then follows the grouped order (types stay together until you drag them apart again).
   - Archived accounts aren't reorderable and stay at the bottom. New accounts go last.
@@ -59,13 +64,22 @@ These decisions were agreed before any code was written. Update this file when a
 
 ## Card bills
 
-- On the payment day, a **Card payoff** for the due amount is recorded automatically. It's editable and
-  starts unconfirmed. Paidy only gets one if it has a paid-from account.
+- Payment dates move off weekends and Japanese bank holidays per the card's rule (`JapaneseHolidays`:
+  national holidays, 振替休日, 国民の休日, the 2019–2021 one-off moves, and the banks' Dec 31 – Jan 3
+  closure). Sun Dec 27 → Mon Dec 28; Sat Jan 2 → Mon Jan 4. Screens say why ("the 27th is a Sunday").
+- On the actual (shifted) payment day, a **Card payoff** for the due amount is recorded automatically as a
+  transfer from the paying account. It's editable, starts unconfirmed and shows an **Auto** badge. Paidy
+  only gets one if it has a paid-from account.
 - Each cycle is processed once, so deleting an automatic payoff doesn't bring it back.
-- From 7 days before a payment day, Home shows a reminder.
-  - If the paying account's balance is below the total of the bills it pays, the reminder turns red.
-  - In that case a local notification fires at 9:00, three days and one day before.
-- Weekends and holidays are ignored, because warning on the nominal date is the safe side.
+- A bill shows up as soon as its statement closes. Kakeibo projects the paying account's balance on the due
+  date, counting future-dated entries (scheduled income) and earlier bills from the same account. If it
+  falls short, Summary, the card and the account show the shortfall with a one-tap transfer from the money
+  account with the most in it (`Billing.suggestedSource`).
+- Notifications (local, `BillNotifications`): when a statement closes, "statement closed" or "bill not
+  covered"; for a bill that won't be covered, 9:00 three days and one day before; for any other bill, 9:00
+  three days before. "Card paid" when a payoff is recorded automatically. Global switches in Settings,
+  per-card switches in card setup.
+- Activity shows "statement closed" rows on the day each statement closes.
 
 ## Partner ("paid for both of us")
 
@@ -83,24 +97,30 @@ These decisions were agreed before any code was written. Update this file when a
   Subscriptions, Other.
 - Income categories: Salary, Dad (iPhone share).
 - Each category can have one fixed monthly budget (optional). Unspent budget doesn't roll over.
-- The **Budgets** tab lists only categories with a budget. A **See all categories** row underneath shows
-  how much went to categories without one and expands to list them (plus archived categories with
-  spending this month). If no category has a budget yet, everything is listed. Totals and the split bar
-  always include all spending. Settings → Categories & budgets still lists every category.
-- Categories can be renamed, reordered and given an emoji. They are archived, never deleted.
+- The **Budgets** tab sorts categories with a budget by attention (see Budget pace below) and lists
+  categories without one, with their spending this month, under **No budget set** (archived categories
+  included when they have spending). Totals, the split bar and trends always include all spending.
+  Settings → Categories & budgets lists every category.
+- Categories can be renamed, reordered and given an emoji (shown when no SF Symbol matches the name).
+  They are archived, never deleted.
 - Months are calendar months. The start day is stored as a setting (`monthStartDay`) for later.
 
-## Entry flow
+## Entry flow (Quick Add)
 
-- Type the amount on the number pad, then tap a category tile to save.
-- Layout, top to bottom: Expense/Income/Transfer, the amount, account/date/split chips, note, then the
-  category tiles directly above the number pad, which is pinned to the bottom edge so the whole entry
-  works one-handed. Transfers have Save under the pad. The tiles scroll only if they don't fit; the
-  note's keyboard covers the pad rather than squashing the screen.
-- The account starts as the default account, which is chosen manually in Settings. The date defaults to today.
-- Split, refund and note are optional and sit on the same screen.
-- Ways to open the add screen: Home **+**, the widget, the Control Center button / Action Button, and the
-  "Add Kakeibo Entry" shortcut.
+- The + beside the tab bar opens Quick Add with the keypad live: amount → category → **Save**. Holding +
+  offers Expense, Income, Transfer and the last three different expenses to log again.
+- Category and account are pre-picked from history (`Suggestions`: time of day, weekday or weekend,
+  recency; the account last used with that category), unless "Suggest category & account" is off. The
+  grid shows the seven most used categories in your own order, plus All.
+- Layout, top to bottom: close, Expense/Income/Transfer, ⋯ (split, refund, delete); the amount (income in
+  green with +¥); date/time and note chips; "Paid with" account chips; category tiles; the keypad pinned
+  to the bottom with 00, 000 and a tall Save key. The note's keyboard covers the pad rather than squashing
+  the screen.
+- Saving a new entry keeps the sheet open, clears the amount and shows "Saved ¥980 · Dining Out · Wallet"
+  with **Undo** (never a dialog). Edits, and transfers suggested by a shortfall warning, close the sheet.
+- Transfer shows each account's balance before and after, with a swap button.
+- Other ways in: the widgets, the Control Center control / Action Button ("Log Expense"), and the "Add
+  Kakeibo Entry" shortcut.
 - **Log Payment** intent (amount, merchant, card): saves an expense in the background.
   - The account is matched from the Wallet card name; the category from the last entry at the same merchant.
   - It's marked "to review". It's ready for a Wallet transaction automation, which hasn't been tested on
@@ -113,44 +133,69 @@ them all off; there's no separate in-app switch. Generators are kept warm (`Hapt
 
 | Moment | Feel |
 | --- | --- |
-| Number-pad key | Very light soft tick |
+| Number-pad key (unless Settings › Keypad haptics is off) | Very light soft tick |
 | Key that does nothing (backspace on ¥0, digit limit) | Short rigid bump |
-| Type, split, refund, account or date changed; month arrows; toggles; scrubbing a chart | Selection tick |
+| Type, split, refund, account, category or date changed; month arrows; filters; toggles; Undo | Selection tick |
 | Entry saved; settle up; mark repaid; payoff confirmed or recorded; balance adjusted; backup restored | Success |
 | Entry saved but its category is now over budget (my share, entry's month) | Warning |
 | Entry deleted | Warning |
 | Dropping a reordered account, category or Home section | Medium tap |
 
-## Data
+## Data and privacy
 
-- Settings offers a JSON export and restore (full) and a CSV export of transactions, both via the share sheet.
+- Settings offers a JSON backup ("Back Up Now", with the date of the last one), restore, and a CSV export of
+  transactions, all via the share sheet or Files. Backups aren't encrypted yet.
+- Optional Face ID (or passcode) lock when the app opens or comes back; a cover hides amounts in the app
+  switcher (on by default).
 - The schema is CloudKit-compatible: every field has a default, nothing is marked unique, and links are
   UUIDs rather than relationships.
 
-## Later (not in v1)
+## Later
 
-- Repeating entries (rent, phone, subscriptions). Planned next.
+- Repeating and scheduled entries (rent, phone, salary): the canvas shows a Repeat row and scheduled salary
+  in a bank account's Upcoming list. Future-dated entries already count in projections.
+- Moving budget between categories for one month ("Cover the ¥1,800 · Move from Shopping"): needs
+  per-month budget overrides. Only "Raise budget" is built.
+- Interactive widget buttons that log without opening the app (they'd have to write from the widget
+  process, but the data lives in the app's own container).
+- Notification actions (Transfer, Remind Me Tomorrow), receipt photos, encrypted backups, the card's
+  billing-calendar chart and statement reconciliation ("Matches your entries").
+- Payday-based months (`monthStartDay` is stored) and the week start setting.
 - Testing the Wallet transaction automation on SMBC (Visa and iD), Rakuten (QUICPay), Revolut and Suica/PASMO.
 - CSV import: Revolut first, then a column-mapping importer with Shift_JIS detection and duplicate matching.
-- iCloud sync (needs a paid developer account).
-- Sharing a joint account and its budget with my partner via CloudKit sharing. Accounts are the
-  sharing unit (`Account.shareScope` is reserved for this).
-- Other currencies (`currencyCode` exists on accounts and entries), payday-based months, Face ID lock.
+- iCloud sync (needs a paid developer account) and sharing a joint account with my partner via CloudKit
+  sharing (`Account.shareScope` is reserved for this).
+- Other currencies (`currencyCode` exists on accounts and entries).
 
-## Look and layout (v1.1 redesign)
+## Look and layout (canvas redesign, v2)
 
-- Designed dark-first but follows the phone's light or dark setting. Apple system colours and type, calm cards. Line icons (SF Symbols) instead of emoji; categories
-  without a matching icon keep their emoji.
-- Colour means something: Rent, Supermarket, Shopping and Restaurants get their own hue, other categories are
-  grey ("Everything else" in charts). Red means over budget or short of money; orange means a bill is close.
-- Tabs: Home, Activity, Budgets, Accounts.
-- **Home**: the month's spending as one big number, the yen left and a per-day allowance, then a line chart of
-  spending so far against last month and the budget (drag to read any day). Quick actions: Add, Transfer,
-  Settle up, Review. Below that, Upcoming bills, Recent, Budgets (the three that most need a look) and the
-  partner balance. **Edit Home** reorders or hides those four sections (`homeSectionOrder`,
-  `homeHiddenSections`). The month is changed with the arrows at the top; swiping no longer changes it,
-  because a horizontal drag now reads the chart.
-- **Budgets**: this month split by category on one bar, the last six months against the budget, and the
-  progress of each category that has a budget (see Categories and budgets).
-- **Accounts**: money available and what's left after card bills, credit cards as swipeable cards, other
-  accounts in one list or grouped by type (see Accounts). **Edit** reorders them.
+The spec is the Claude Design canvas "Kakeibo"; tokens are recorded in CLAUDE.md and defined in
+`Shared/DesignTokens.swift`.
+
+- Dark mode in the iOS 26 language (the canvas's values); light mode follows the phone with derived colours
+  that keep 4.5:1. Indigo (藍) is the accent: one prominent action per surface. Green means income, on
+  track or covered; red over budget; orange a shortfall, at risk or spent more; blue spent less.
+- Categories are rounded squares, accounts circles, credit cards small cards in their own colour; glyphs
+  are SF Symbols matched on the category name. Unknown categories keep their emoji.
+- Tabs: Summary, Activity, Budgets, Accounts in a floating glass bar, with the indigo + beside it. Each tab
+  keeps its navigation stack and the bar shows on pushed screens.
+- **Summary**: a bill that won't be covered (with Transfer and View bill), this month's budget with what's
+  left, the daily allowance for the days after today, today's pace tick, the status and a like-for-like
+  comparison with the same days last month; Needs attention; Upcoming card bills; Recent. The partner
+  balance and entries to review appear in a "To do" card only when there's something to do. The old
+  spending chart, quick actions and Edit Home are gone (`homeSectionOrder` and `homeHiddenSections` are
+  no longer read).
+- **Activity**: search, type/account/category filters, months and days with totals, swipe to duplicate or
+  delete, statement-closed rows. Rows open a **Transaction** page with the card-bill timeline and what the
+  entry did to its budget.
+- **Budgets**: This Month (overview with the category split bar and pace; Needs attention, On track, No
+  budget set) and Trends (spending so far against last month and the recent average, monthly totals with a
+  projection, category changes over the same days, what was kept last month). Categories open a
+  **Category** page.
+- **Budget pace**: today's pace = budget × days elapsed ÷ days in the month. Categories sort over budget,
+  then likely to run out (projected from this month's daily rate, with the date), then on track. A category
+  exactly used up (rent) isn't "at risk". Comparisons are like-for-like: Nov 1–18 against Oct 1–18.
+- **Accounts**: net worth; bank accounts, prepaid wallets and cash with totals and one status line each;
+  credit cards. A bank account page shows the last and next four weeks, upcoming items with the balance
+  after, and history with a running balance. A card page shows the payment warning, the current bill, the
+  bill building now and past statements.

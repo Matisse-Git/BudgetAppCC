@@ -116,5 +116,8 @@ Tabs: Summary `house`, Activity `list.bullet`, Budgets `chart.pie`, Accounts `cr
 `kCard()`, `CardList` + `ListDivider`, `KRow`, `AmountStack`, `Chevron`, `CategoryIcon`, `SymbolTile`,
 `AccountIcon`, `MiniCard`, `SectionTitle`, `SectionCaps`, `BudgetBar` (fill + pace tick, red past
 100%), `StatusChip`, `AutoBadge`, `PillButtonStyle` (`.pill`, `.pillSecondary`), `UndoToast`,
-`GlassBackground` (glass on iOS 26, material before), `KakeiboTabBar`.
+`GlassBackground` (glass on iOS 26, material before), `KakeiboTabBar`. Elsewhere: `TransactionRow` and
+`EntryPresentation` (how an entry reads), `InfoRow`, `TimelineStep`, `CardFace`, `KeypadView`, `ActionTile`,
+`FilterChip`. Long lists that need swipe actions use an inset-grouped `List` with `.listRowInsets(EdgeInsets())`
+and `Palette.card` row backgrounds; links without a chevron use a hidden `NavigationLink` in `.background`.
 Navigation bars are the system ones (glass back and Edit buttons on iOS 26).

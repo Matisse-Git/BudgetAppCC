@@ -40,10 +40,11 @@ A free Apple ID allows only 3 sideloaded apps at a time and a limited number of 
 
 ### After installing
 
-- **Widget:** long-press the Home Screen or Lock Screen → Edit → add the Kakeibo widget. Tapping it opens the add screen.
+- **Widgets:** long-press the Home Screen or Lock Screen → Edit → add the Kakeibo **Budget** widget (small, medium
+  or Lock Screen) or the **Next card bill** widget. Tapping one opens the add screen.
   The widget reads its numbers through an App Group. If it only ever shows placeholder numbers, the installer
   didn't keep the App Group when re-signing; the app itself is unaffected.
-- **Control Center / Action Button:** add the "Add Kakeibo entry" control.
+- **Control Center / Action Button:** add the "Log Expense" control.
 - **Shortcuts:** "Add Kakeibo Entry" opens the add screen. "Log Payment" (amount, merchant, card) saves an
   expense without opening the app and marks it for review. It's ready for a Wallet transaction
   automation, which we haven't tested on Japanese cards yet.
@@ -65,9 +66,12 @@ and builds `Kakeibo.ipa` with `scripts/build-ipa.sh` on every push.
 Layout:
 
 - `Kakeibo/Models`: SwiftData models (`Account`, `BudgetCategory`, `Entry`) and the seed data.
-- `Kakeibo/Logic`: balances and spending (`Ledger`), card bills (`Billing`), charts and budget lists
-  (`Insights`), account order and grouping (`AccountLayout`), backup, notifications.
-- `Kakeibo/Views`: SwiftUI screens.
+- `Kakeibo/Logic`: balances and spending (`Ledger`), card bills and holiday shifts (`Billing`,
+  `JapaneseHolidays`), budget pace and trends (`Insights`), account forecasts and card history
+  (`AccountInsights`), add-sheet suggestions (`Suggestions`), account order and grouping (`AccountLayout`),
+  backup, notifications (`Maintenance`).
+- `Kakeibo/Views`: SwiftUI screens, built on the shared components in `DesignComponents.swift`.
+- `Shared/DesignTokens.swift`: colours, type and sizes from the design canvas (see CLAUDE.md).
 - `Kakeibo/Intents`: the Log Payment intent and Siri/Shortcuts phrases.
 - `KakeiboWidget`: the Home/Lock Screen widget and the Control Center button.
 - `Shared`: code compiled into both the app and the widget.

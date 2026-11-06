@@ -17,8 +17,8 @@ struct ReviewListView: View {
             if !payoffs.isEmpty {
                 Section {
                     ForEach(payoffs) { entry in
-                        HStack {
-                            Button { editing = entry } label: { EntryRow(entry: entry, lookup: lookup) }
+                        HStack(spacing: 0) {
+                            Button { editing = entry } label: { TransactionRow(entry: entry, lookup: lookup, timeStyle: .relative) }
                                 .buttonStyle(.plain)
                             Button {
                                 entry.isConfirmed = true
@@ -28,8 +28,10 @@ struct ReviewListView: View {
                                 Image(systemName: "checkmark.circle").font(.title2)
                             }
                             .buttonStyle(.borderless)
+                            .padding(.trailing, 16)
                             .accessibilityLabel("Confirm payoff")
                         }
+                        .listRowInsets(EdgeInsets())
                     }
                 } header: {
                     Text("Payoffs to confirm")
@@ -40,15 +42,16 @@ struct ReviewListView: View {
             if !review.isEmpty {
                 Section("Logged automatically") {
                     ForEach(review) { entry in
-                        Button { editing = entry } label: { EntryRow(entry: entry, lookup: lookup) }
+                        Button { editing = entry } label: { TransactionRow(entry: entry, lookup: lookup, timeStyle: .relative) }
                             .buttonStyle(.plain)
+                            .listRowInsets(EdgeInsets())
                             .swipeActions {
                                 Button("Looks right") {
                                     entry.needsReview = false
                                     context.saveAndRefresh()
                                     Haptics.success()
                                 }
-                                .tint(.green)
+                                .tint(Palette.positive)
                             }
                     }
                 }

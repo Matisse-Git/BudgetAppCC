@@ -317,8 +317,9 @@ struct CategoriesView: View {
     }
 
     private func row(_ category: BudgetCategory) -> some View {
-        HStack {
-            Text(category.displayName)
+        HStack(spacing: 12) {
+            CategoryIcon(category: category, size: 28)
+            Text(category.name)
             Spacer()
             if category.kind == .expense {
                 Text(category.monthlyBudget > 0 ? Yen.format(category.monthlyBudget) : "No budget")

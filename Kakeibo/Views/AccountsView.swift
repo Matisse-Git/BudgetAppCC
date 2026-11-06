@@ -312,7 +312,7 @@ struct ReorderAccountsView: View {
                     Section(group.title) {
                         ForEach(group.accounts) { account in
                             HStack(spacing: 12) {
-                                IconTile(symbol: account.kind.symbol, size: 30, circle: true, neutral: true)
+                                AccountIcon(account: account, size: 30)
                                 Text(account.name)
                             }
                         }
