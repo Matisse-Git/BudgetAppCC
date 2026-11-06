@@ -101,7 +101,7 @@ struct RootView: View {
         setupDone = screen != "setup"
         showSetup = screen == "setup"
         showAdd = screen == "add"
-        let tabs = ["transactions": 1, "budgets": 2, "budgets-all": 2, "accounts": 3]
+        let tabs = ["transactions": 1, "budgets": 2, "budgets-all": 2, "accounts": 3, "accounts-grouped": 3]
         tab = tabs[screen] ?? 0
         Maintenance.run(context, autoPayoffs: false)
     }

@@ -314,3 +314,69 @@ final class BudgetListingTests: XCTestCase {
         XCTAssertEqual(listing.unbudgetedSpent, 500)
     }
 }
+
+final class AccountLayoutTests: XCTestCase {
+    private func make() -> [Account] {
+        [
+            Account(name: "SMBC bank", kind: .bank, sortOrder: 0),
+            Account(name: "Olive", kind: .credit, sortOrder: 1),
+            Account(name: "Revolut", kind: .topUp, sortOrder: 2),
+            Account(name: "Cash", kind: .cash, sortOrder: 3),
+            Account(name: "PayPay", kind: .topUp, sortOrder: 4),
+            Account(name: "Rakuten", kind: .credit, sortOrder: 5),
+        ]
+    }
+
+    private func names(_ groups: [AccountGroup]) -> [[String]] { groups.map { $0.accounts.map(\.name) } }
+
+    func testFlatAndGroupedViewsShareOneOrder() {
+        let all = make()
+        XCTAssertEqual(AccountLayout.cards(all).map(\.name), ["Olive", "Rakuten"])
+        XCTAssertEqual(names(AccountLayout.moneyGroups(all, byType: false)), [["SMBC bank", "Revolut", "Cash", "PayPay"]])
+        XCTAssertEqual(AccountLayout.moneyGroups(all, byType: true).map(\.title), ["Bank", "Top-up", "Cash"])
+        XCTAssertEqual(names(AccountLayout.moneyGroups(all, byType: true)), [["SMBC bank"], ["Revolut", "PayPay"], ["Cash"]])
+    }
+
+    func testMovingInTheFlatListRenumbersEverything() {
+        let all = make()
+        let groups = AccountLayout.editGroups(all, byType: false)
+        // Drag Cash (index 2 of Money) to the top.
+        AccountLayout.move(group: 1, from: IndexSet(integer: 2), to: 0, in: groups, all: all)
+        XCTAssertEqual(names(AccountLayout.moneyGroups(all, byType: false)), [["Cash", "SMBC bank", "Revolut", "PayPay"]])
+        XCTAssertEqual(AccountLayout.sorted(all).map(\.sortOrder), Array(0..<6), "Orders are unique and dense")
+        XCTAssertEqual(AccountLayout.sorted(all).map(\.name).prefix(2), ["Olive", "Rakuten"], "Cards come first in pickers")
+    }
+
+    func testMovingInsideATypeCarriesOverToTheFlatList() {
+        let all = make()
+        let groups = AccountLayout.editGroups(all, byType: true)
+        XCTAssertEqual(groups.map(\.id), ["cards", "bank", "topUp", "cash"])
+        // Put PayPay above Revolut inside Top-up.
+        AccountLayout.move(group: 2, from: IndexSet(integer: 1), to: 0, in: groups, all: all)
+        XCTAssertEqual(names(AccountLayout.moneyGroups(all, byType: true)), [["SMBC bank"], ["PayPay", "Revolut"], ["Cash"]])
+        XCTAssertEqual(names(AccountLayout.moneyGroups(all, byType: false)), [["SMBC bank", "PayPay", "Revolut", "Cash"]])
+        // Reorder the cards.
+        AccountLayout.move(group: 0, from: IndexSet(integer: 1), to: 0, in: AccountLayout.editGroups(all, byType: true), all: all)
+        XCTAssertEqual(AccountLayout.cards(all).map(\.name), ["Rakuten", "Olive"])
+    }
+
+    func testArchivedAccountsStayAfterAndNewAccountsGoLast() {
+        let all = make()
+        let old = Account(name: "Old bank", kind: .bank, sortOrder: 0)
+        old.isArchived = true
+        let everything = all + [old]
+        XCTAssertFalse(AccountLayout.moneyGroups(everything, byType: false)[0].accounts.contains { $0.name == "Old bank" })
+        AccountLayout.move(group: 1, from: IndexSet(integer: 0), to: 2, in: AccountLayout.editGroups(everything, byType: false), all: everything)
+        XCTAssertEqual(AccountLayout.sorted(everything).last?.name, "Old bank")
+        XCTAssertEqual(AccountLayout.nextSortOrder(everything), 7)
+        XCTAssertEqual(AccountLayout.nextSortOrder([]), 0)
+    }
+
+    func testTiesFallBackToCreationDate() {
+        let first = Account(name: "First", kind: .cash, sortOrder: 0)
+        first.createdAt = Date(timeIntervalSince1970: 100)
+        let second = Account(name: "Second", kind: .cash, sortOrder: 0)
+        second.createdAt = Date(timeIntervalSince1970: 200)
+        XCTAssertEqual(AccountLayout.sorted([second, first]).map(\.name), ["First", "Second"])
+    }
+}

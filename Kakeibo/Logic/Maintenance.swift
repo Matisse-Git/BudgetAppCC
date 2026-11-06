@@ -14,6 +14,8 @@ enum SettingsKey {
     static let homeSectionOrder = "homeSectionOrder"
     /// Home sections the user has hidden, comma separated.
     static let homeHiddenSections = "homeHiddenSections"
+    /// Accounts tab: split non-credit accounts into Bank, Top-up and Cash. Off shows one "Money" list.
+    static let groupAccountsByType = "groupAccountsByType"
 
     static let defaultPartnerName = "Girlfriend"
 }

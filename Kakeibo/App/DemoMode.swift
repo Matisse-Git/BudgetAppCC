@@ -22,6 +22,8 @@ struct DemoScreen: View {
     var body: some View {
         if name == "edit-home" {
             EditHomeView(order: .constant(HomeSection.defaultOrder), hidden: .constant(""))
+        } else if name == "edit-accounts" {
+            ReorderAccountsView()
         } else {
             screens
         }
@@ -50,7 +52,7 @@ struct DemoScreen: View {
         }
     }
 
-    static let standalone: Set<String> = ["card", "partner", "settings", "categories", "review", "edit-home"]
+    static let standalone: Set<String> = ["card", "partner", "settings", "categories", "review", "edit-home", "edit-accounts"]
 }
 
 enum DemoData {
@@ -86,6 +88,12 @@ enum DemoData {
             rakuten.paymentDay = min(today + 3, 28)
         }
         for a in accounts { a.createdAt = now }
+        // A custom order: Cash dragged up under the bank. The flat "Money" list shows it second;
+        // grouped by type, it moves into its own Cash list.
+        let order = ["SMBC bank", "SMBC Olive credit", "Rakuten Card", "Paidy", "Cash", "Revolut", "PayPay", "PASMO"]
+        for a in accounts { a.sortOrder = order.firstIndex(of: a.name) ?? order.count }
+        // Grouping is a real setting; demo screens set it so each screenshot is predictable.
+        UserDefaults.standard.set(DemoMode.screen == "accounts-grouped", forKey: SettingsKey.groupAccountsByType)
 
         var entries: [Entry] = []
         func add(_ kind: EntryKind, _ amount: Int, _ when: Date, from: String?, to: String? = nil, category name: String? = nil,

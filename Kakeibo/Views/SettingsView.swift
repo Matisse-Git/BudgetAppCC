@@ -8,6 +8,8 @@ struct SettingsView: View {
     @AppStorage(SettingsKey.defaultAccountID) private var defaultAccountID = ""
     @AppStorage(SettingsKey.partnerName) private var partnerName = SettingsKey.defaultPartnerName
     @AppStorage(SettingsKey.setupDone) private var setupDone = true
+    @AppStorage(SettingsKey.groupAccountsByType) private var groupAccountsByType = false
+    @State private var reorderingAccounts = false
 
     @State private var shareItem: ShareItem?
     @State private var importing = false
@@ -27,6 +29,15 @@ struct SettingsView: View {
                     Spacer()
                     TextField("Name", text: $partnerName).multilineTextAlignment(.trailing)
                 }
+            }
+            Section {
+                Toggle("Group accounts by type", isOn: $groupAccountsByType)
+                    .sensoryFeedback(.selection, trigger: groupAccountsByType)
+                Button("Reorder accounts…") { reorderingAccounts = true }
+            } header: {
+                Text("Accounts")
+            } footer: {
+                Text("Grouping splits the Accounts tab into Bank, Top-up and Cash. Credit cards always show as cards.")
             }
             Section("Manage") {
                 NavigationLink("Categories & budgets") { CategoriesView() }
@@ -54,6 +65,9 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
+        .sheet(isPresented: $reorderingAccounts) {
+            ReorderAccountsView()
+        }
         .sheet(item: $shareItem) { item in
             ActivityView(items: [item.url])
         }

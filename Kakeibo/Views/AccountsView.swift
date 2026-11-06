@@ -4,14 +4,16 @@ import SwiftUI
 struct AccountsView: View {
     @Query(sort: \Account.sortOrder) private var accounts: [Account]
     @Query private var entries: [Entry]
+    @AppStorage(SettingsKey.groupAccountsByType) private var groupByType = false
     @State private var creating = false
+    @State private var reordering = false
 
     var body: some View {
         let ledger = Ledger(accounts: accounts, entries: entries)
-        let active = accounts.filter { !$0.isArchived }
-        let cards = active.filter { $0.kind == .credit }
-        let money = active.filter { $0.kind != .credit }
-        let archived = accounts.filter { $0.isArchived }
+        let cards = AccountLayout.cards(accounts)
+        let groups = AccountLayout.moneyGroups(accounts, byType: groupByType)
+        let money = groups.flatMap(\.accounts)
+        let archived = AccountLayout.sorted(accounts.filter { $0.isArchived })
         let available = money.filter(\.holdsMoney).reduce(0) { $0 + ledger.balance(of: $1) }
         let bills = cards.reduce(0) { $0 + Billing.status(for: $1, ledger: ledger).due }
         NavigationStack {
@@ -52,8 +54,8 @@ struct AccountsView: View {
                         .padding(.horizontal, -16)
                     }
 
-                    if !money.isEmpty {
-                        accountList("Money", money, ledger: ledger)
+                    ForEach(groups) { group in
+                        accountList(group.title, group.accounts, ledger: ledger)
                     }
                     if !archived.isEmpty {
                         accountList("Archived", archived, ledger: ledger)
@@ -66,6 +68,10 @@ struct AccountsView: View {
             .background(Color.groupedBackground)
             .navigationTitle("Accounts")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Edit") { reordering = true }
+                        .accessibilityHint("Reorder accounts and choose whether to group them by type")
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         creating = true
@@ -77,6 +83,9 @@ struct AccountsView: View {
             }
             .sheet(isPresented: $creating) {
                 AccountEditView(account: nil)
+            }
+            .sheet(isPresented: $reordering) {
+                ReorderAccountsView()
             }
         }
     }
@@ -94,6 +103,55 @@ struct AccountsView: View {
                             .padding(.vertical, 12)
                     }
                     .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+}
+
+/// Drag accounts into your own order, and choose whether non-card accounts are split by type.
+struct ReorderAccountsView: View {
+    @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
+    @Query(sort: \Account.sortOrder) private var accounts: [Account]
+    @AppStorage(SettingsKey.groupAccountsByType) private var groupByType = false
+
+    var body: some View {
+        let groups = AccountLayout.editGroups(accounts, byType: groupByType)
+        NavigationStack {
+            List {
+                Section {
+                    Toggle("Group by type", isOn: $groupByType)
+                        .sensoryFeedback(.selection, trigger: groupByType)
+                } footer: {
+                    Text("Splits your other accounts into Bank, Top-up and Cash. Your order is kept either way.")
+                }
+                ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
+                    Section(group.title) {
+                        ForEach(group.accounts) { account in
+                            HStack(spacing: 12) {
+                                IconTile(symbol: account.kind.symbol, size: 30, circle: true, neutral: true)
+                                Text(account.name)
+                            }
+                        }
+                        .onMove { source, destination in
+                            AccountLayout.move(group: index, from: source, to: destination, in: groups, all: accounts)
+                            try? context.save()
+                            Haptics.lift()
+                        }
+                    }
+                }
+                Section {
+                } footer: {
+                    Text("Drag to reorder. The same order is used in every account picker. Archived accounts stay at the bottom of the Accounts tab.")
+                }
+            }
+            .environment(\.editMode, .constant(.active))
+            .navigationTitle("Edit accounts")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
                 }
             }
         }
@@ -466,7 +524,7 @@ struct AccountEditView: View {
         if let account {
             target = account
         } else {
-            target = Account(name: name, kind: kind, sortOrder: (accounts.map(\.sortOrder).max() ?? 0) + 1)
+            target = Account(name: name, kind: kind, sortOrder: AccountLayout.nextSortOrder(accounts))
             context.insert(target)
         }
         target.name = name.trimmingCharacters(in: .whitespaces)
