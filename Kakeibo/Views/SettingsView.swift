@@ -2,69 +2,193 @@ import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// Settings (Settings artboard): privacy first, then logging, card bills, organising and data. Only
+/// settings that do something are shown; payday months and week start are on the canvas but not built.
 struct SettingsView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \Account.sortOrder) private var accounts: [Account]
+    @Query(sort: \BudgetCategory.sortOrder) private var categories: [BudgetCategory]
     @AppStorage(SettingsKey.defaultAccountID) private var defaultAccountID = ""
     @AppStorage(SettingsKey.partnerName) private var partnerName = SettingsKey.defaultPartnerName
     @AppStorage(SettingsKey.setupDone) private var setupDone = true
-    @AppStorage(SettingsKey.groupAccountsByType) private var groupAccountsByType = true
-    @State private var reorderingAccounts = false
+    @AppStorage(SettingsKey.suggestCategory) private var suggests = true
+    @AppStorage(SettingsKey.keypadHaptics) private var keypadHaptics = true
+    @AppStorage(SettingsKey.eveningReminder) private var eveningReminder = false
+    @AppStorage(SettingsKey.eveningReminderMinutes) private var eveningMinutes = 21 * 60
+    @AppStorage(SettingsKey.billReminders) private var billReminders = true
+    @AppStorage(SettingsKey.shortfallWarnings) private var shortfallWarnings = true
+    @AppStorage(SettingsKey.faceIDLock) private var faceIDLock = false
+    @AppStorage(SettingsKey.hideInSwitcher) private var hideInSwitcher = true
+    @AppStorage(SettingsKey.lastBackup) private var lastBackup: Double = 0
 
+    @State private var reorderingAccounts = false
     @State private var shareItem: ShareItem?
     @State private var importing = false
     @State private var pendingImport: Data?
     @State private var message: String?
 
+    private var eveningTime: Binding<Date> {
+        Binding(
+            get: { Calendar.kakeibo.date(bySettingHour: eveningMinutes / 60, minute: eveningMinutes % 60, second: 0, of: Date()) ?? Date() },
+            set: { date in
+                let parts = Calendar.kakeibo.dateComponents([.hour, .minute], from: date)
+                eveningMinutes = (parts.hour ?? 21) * 60 + (parts.minute ?? 0)
+            }
+        )
+    }
+
     var body: some View {
         Form {
-            Section("Defaults") {
-                Picker("Default account", selection: $defaultAccountID) {
-                    ForEach(accounts.filter { $0.tracksBalance && !$0.isArchived }) { account in
-                        Text(account.displayName).tag(account.id.uuidString)
+            Section {
+                HStack(alignment: .top, spacing: 14) {
+                    SymbolTile(symbol: "lock.shield.fill", hue: .green, size: 44)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("On this iPhone only")
+                            .font(.headline)
+                        Text("No account and no bank connections. Your ledger never leaves this device.")
+                            .font(.subheadline)
+                            .foregroundStyle(Palette.textSecondary)
                     }
                 }
+                .padding(.vertical, 6)
                 HStack {
-                    Text("Partner's name")
+                    Text(lastBackup > 0 ? "Last backup \(Date(timeIntervalSince1970: lastBackup).formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))" : "No backup yet")
+                        .font(.subheadline)
+                        .foregroundStyle(Palette.textSecondary)
                     Spacer()
-                    TextField("Name", text: $partnerName).multilineTextAlignment(.trailing)
+                    Button {
+                        exportBackup()
+                    } label: {
+                        Text("Back Up Now")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Palette.accentSoftText)
+                            .padding(.horizontal, 14)
+                            .frame(height: 32)
+                            .background(Capsule().fill(Palette.accentSoftFill))
+                    }
+                    .buttonStyle(.plain)
                 }
             }
-            Section {
-                Toggle("Group accounts by type", isOn: $groupAccountsByType)
-                    .sensoryFeedback(.selection, trigger: groupAccountsByType)
-                Button("Reorder accounts…") { reorderingAccounts = true }
-            } header: {
-                Text("Accounts")
-            } footer: {
-                Text("Grouping splits the Accounts tab into Bank, Top-up and Cash. Credit cards always show as cards.")
+
+            Section("General") {
+                LabeledContent("Currency", value: "Japanese Yen (¥)")
+                Picker("Default account", selection: $defaultAccountID) {
+                    ForEach(accounts.filter { $0.tracksBalance && !$0.isArchived }) { account in
+                        Text(account.name).tag(account.id.uuidString)
+                    }
+                }
+                LabeledContent("Partner's name") {
+                    TextField("Name", text: $partnerName)
+                        .multilineTextAlignment(.trailing)
+                }
             }
-            Section("Manage") {
-                NavigationLink("Categories & budgets") { CategoriesView() }
-                Button("Run setup checklist again") { setupDone = false }
+
+            Section("Logging") {
+                Toggle(isOn: $suggests) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("Suggest category & account")
+                        Text("Learns from time of day and your entries")
+                            .font(.footnote)
+                            .foregroundStyle(Palette.textSecondary)
+                    }
+                }
+                Toggle("Keypad haptics", isOn: $keypadHaptics)
+                Toggle("Evening reminder", isOn: $eveningReminder)
+                if eveningReminder {
+                    DatePicker("Time", selection: eveningTime, displayedComponents: .hourAndMinute)
+                }
             }
+
             Section {
-                Button("Enable bill notifications") {
+                Toggle(isOn: $billReminders) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("Bill reminders")
+                        Text("3 days before each payment")
+                            .font(.footnote)
+                            .foregroundStyle(Palette.textSecondary)
+                    }
+                }
+                Toggle(isOn: $shortfallWarnings) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("Shortfall warnings")
+                        Text("When a bill closes, then 3 days and 1 day before")
+                            .font(.footnote)
+                            .foregroundStyle(Palette.textSecondary)
+                    }
+                }
+                LabeledContent("Bank holidays", value: "Japan")
+                Button("Allow notifications") {
                     BillNotifications.requestPermission()
                     Maintenance.run(context, autoPayoffs: false)
                 }
-            } footer: {
-                Text("You'll get a notification 3 days and 1 day before a card bill the paying account can't cover.")
-            }
-            Section {
-                Button("Export full backup (JSON)") { export { try Backup.exportJSON(context: context) } }
-                Button("Export transactions (CSV)") { export { try Backup.exportCSV(context: context) } }
-                Button("Restore from backup…") { importing = true }
             } header: {
-                Text("Data")
+                Text("Card bills")
             } footer: {
-                Text("Your data lives only on this phone. Save a JSON backup to Files now and then, especially before changing how the app is installed.")
+                Text("Payments that land on a weekend or a Japanese bank holiday move to the next business day; each card can change that.")
             }
+
+            Section("Organize") {
+                NavigationLink {
+                    CategoriesView()
+                } label: {
+                    LabeledContent("Categories & budgets", value: "\(categories.filter { !$0.isArchived }.count)")
+                }
+                Button {
+                    reorderingAccounts = true
+                } label: {
+                    LabeledContent("Accounts", value: "\(accounts.filter { !$0.isArchived }.count)")
+                        .foregroundStyle(Palette.textPrimary)
+                }
+                Button("Show the welcome again") { setupDone = false }
+            }
+
             Section {
-                LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?")
+                Toggle("Lock with Face ID", isOn: $faceIDLock)
+                Toggle("Hide amounts in app switcher", isOn: $hideInSwitcher)
+                Button {
+                    exportBackup()
+                } label: {
+                    Label("Back Up to Files", systemImage: "square.and.arrow.up")
+                }
+                Button {
+                    export { try Backup.exportCSV(context: context) }
+                } label: {
+                    Label("Export CSV", systemImage: "tablecells")
+                }
+                Button {
+                    importing = true
+                } label: {
+                    Label("Restore from Backup", systemImage: "arrow.counterclockwise")
+                }
+            } header: {
+                Text("Privacy & data")
+            } footer: {
+                Text("Backups are files you keep in Files or iCloud Drive. Kakeibo has no servers and no account to sign in to.")
+            }
+
+            Section {
+            } footer: {
+                Text("Kakeibo \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")")
+                    .frame(maxWidth: .infinity)
             }
         }
+        .scrollContentBackground(.hidden)
+        .kScreenBackground()
         .navigationTitle("Settings")
+        .onChange(of: eveningReminder) { _, on in
+            if on { BillNotifications.requestPermission() }
+            BillNotifications.scheduleEveningReminder()
+        }
+        .onChange(of: eveningMinutes) { _, _ in BillNotifications.scheduleEveningReminder() }
+        .onChange(of: billReminders) { _, _ in Maintenance.run(context, autoPayoffs: false) }
+        .onChange(of: shortfallWarnings) { _, _ in Maintenance.run(context, autoPayoffs: false) }
+        .sensoryFeedback(.selection, trigger: suggests)
+        .sensoryFeedback(.selection, trigger: keypadHaptics)
+        .sensoryFeedback(.selection, trigger: eveningReminder)
+        .sensoryFeedback(.selection, trigger: billReminders)
+        .sensoryFeedback(.selection, trigger: shortfallWarnings)
+        .sensoryFeedback(.selection, trigger: faceIDLock)
+        .sensoryFeedback(.selection, trigger: hideInSwitcher)
         .sheet(isPresented: $reorderingAccounts) {
             ReorderAccountsView()
         }
@@ -105,6 +229,14 @@ struct SettingsView: View {
         }
         .alert(message ?? "", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
             Button("OK", role: .cancel) {}
+        }
+    }
+
+    private func exportBackup() {
+        export {
+            let url = try Backup.exportJSON(context: context)
+            lastBackup = Date().timeIntervalSince1970
+            return url
         }
     }
 

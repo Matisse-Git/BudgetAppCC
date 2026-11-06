@@ -300,7 +300,8 @@ enum Billing {
     @MainActor
     @discardableResult
     static func runAutoPayoffs(context: ModelContext, accounts: [Account], entries: [Entry], now: Date = Date(),
-                               defaults: UserDefaults = .standard, calendar: Calendar = .kakeibo) -> Int {
+                               defaults: UserDefaults = .standard, calendar: Calendar = .kakeibo,
+                               onCreate: ((Entry) -> Void)? = nil) -> Int {
         var processed = Set(defaults.stringArray(forKey: processedKey) ?? [])
         var allEntries = entries
         var created = 0
@@ -335,6 +336,7 @@ enum Billing {
                 context.insert(payoff)
                 allEntries.append(payoff)
                 created += 1
+                onCreate?(payoff)
             }
         }
         defaults.set(Array(processed), forKey: processedKey)

@@ -9,6 +9,7 @@ struct CardSetupView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \Account.sortOrder) private var accounts: [Account]
+    @Query private var entries: [Entry]
 
     @State private var name = ""
     @State private var color: CardColor = .blue
@@ -26,6 +27,13 @@ struct CardSetupView: View {
     @State private var archived = false
     @State private var showsPaymentWheel = false
     @State private var loaded = false
+
+    /// A new card, or one nothing has been logged on yet (like the seeded cards during first run):
+    /// where it stands today can still be set.
+    private var setsOpeningAmounts: Bool {
+        guard let card else { return true }
+        return !entries.contains { $0.accountID == card.id || $0.toAccountID == card.id }
+    }
 
     private var rule: BillingRule {
         BillingRule(closingDay: closingDay, paymentDay: paymentDay, paymentMonthOffset: paymentOffset, shift: shift)
@@ -145,7 +153,7 @@ struct CardSetupView: View {
                 }
                 .listRowBackground(Palette.sheetRow)
 
-                if card == nil {
+                if setsOpeningAmounts {
                     Section {
                         LabeledContent("Unpaid statement") {
                             TextField("¥0", value: $unpaid, format: .number)
@@ -262,15 +270,19 @@ struct CardSetupView: View {
         reminder = card.paymentReminder
         warn = card.shortfallWarning
         archived = card.isArchived
+        unpaid = max(-card.openingBalance, 0)
     }
 
     private func save() {
+        let opening = setsOpeningAmounts
         let target: Account
         if let card {
             target = card
         } else {
             target = Account(name: name, kind: .credit, sortOrder: AccountLayout.nextSortOrder(accounts))
             context.insert(target)
+        }
+        if opening {
             target.openingBalance = -abs(unpaid)
             if spentSince > 0 {
                 // Purchases since the last closing day belong on the bill that's building, not the closed one.

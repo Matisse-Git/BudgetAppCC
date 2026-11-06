@@ -1,3 +1,4 @@
+import LocalAuthentication
 import SwiftData
 import SwiftUI
 import UIKit
@@ -25,13 +26,43 @@ struct RootView: View {
     @State private var showSetup = false
     @State private var tab: AppTab = .summary
     @State private var keyboardShown = false
+    @AppStorage(SettingsKey.faceIDLock) private var faceIDLock = false
+    @AppStorage(SettingsKey.hideInSwitcher) private var hideInSwitcher = true
+    @State private var locked = UserDefaults.standard.bool(forKey: SettingsKey.faceIDLock)
 
     var body: some View {
-        if let screen = DemoMode.screen, DemoScreen.standalone.contains(screen) {
-            DemoScreen(name: screen)
-                .task { startDemo() }
-        } else {
-            tabs
+        Group {
+            if let screen = DemoMode.screen, DemoScreen.standalone.contains(screen) {
+                DemoScreen(name: screen)
+                    .task { startDemo() }
+            } else {
+                tabs
+            }
+        }
+        .task {
+            if faceIDLock && locked && !DemoMode.isOn { authenticate() }
+        }
+        .overlay {
+            if faceIDLock && locked && !DemoMode.isOn {
+                LockScreen(unlock: authenticate)
+            } else if hideInSwitcher && scenePhase != .active && !DemoMode.isOn {
+                PrivacyCover()
+            }
+        }
+    }
+
+    /// Face ID, falling back to the passcode. Without either set up, the lock can't work, so it opens.
+    private func authenticate() {
+        let context = LAContext()
+        var error: NSError?
+        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
+            locked = false
+            return
+        }
+        context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Unlock Kakeibo") { success, _ in
+            DispatchQueue.main.async {
+                if success { locked = false }
+            }
         }
     }
 
@@ -67,7 +98,7 @@ struct RootView: View {
             EntryEditorView(mode: .new, draft: draft)
         }
         .fullScreenCover(isPresented: $showSetup) {
-            SetupView {
+            OnboardingView {
                 setupDone = true
                 showSetup = false
             }
@@ -99,10 +130,12 @@ struct RootView: View {
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .active:
+                if faceIDLock && locked { authenticate() }
                 Maintenance.run(context)
                 if PendingAction.consumeAdd() { addDraft = EntryDraft() }
             case .background:
                 try? context.save()
+                if faceIDLock { locked = true }
             default:
                 break
             }
@@ -159,5 +192,40 @@ struct RootView: View {
                                       "accounts": .accounts, "accounts-flat": .accounts]
         tab = tabs[screen] ?? .summary
         Maintenance.run(context, autoPayoffs: false)
+    }
+}
+
+/// Shown while Kakeibo is locked with Face ID.
+struct LockScreen: View {
+    let unlock: () -> Void
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "lock.fill")
+                .font(.system(size: 34, weight: .semibold))
+                .foregroundStyle(Palette.accentTint)
+            Text("Kakeibo is locked")
+                .font(.title3.bold())
+                .foregroundStyle(Palette.textPrimary)
+            Button("Unlock", action: unlock)
+                .buttonStyle(PillButtonStyle(fill: false))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Palette.background.ignoresSafeArea())
+    }
+}
+
+/// Covers amounts in the app switcher.
+struct PrivacyCover: View {
+    var body: some View {
+        ZStack {
+            Palette.background.ignoresSafeArea()
+            Image(systemName: "yensign")
+                .font(.system(size: 40, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 88, height: 88)
+                .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Palette.accentFill))
+        }
+        .accessibilityHidden(true)
     }
 }

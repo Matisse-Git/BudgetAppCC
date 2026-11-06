@@ -28,6 +28,7 @@ targets:
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         ITSAppUsesNonExemptEncryption: false
+        NSFaceIDUsageDescription: Kakeibo uses Face ID to unlock your ledger.
         CFBundleURLTypes:
           - CFBundleURLName: com.matisse.kakeibo
             CFBundleURLSchemes:
