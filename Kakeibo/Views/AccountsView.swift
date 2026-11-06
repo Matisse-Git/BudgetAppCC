@@ -1,88 +1,117 @@
 import SwiftData
 import SwiftUI
 
+/// The Accounts tab (Accounts artboard): net worth, then bank accounts, prepaid wallets and cash with
+/// their totals and a status line each, then credit cards with what's due and what's building.
 struct AccountsView: View {
     @Query(sort: \Account.sortOrder) private var accounts: [Account]
     @Query private var entries: [Entry]
-    @AppStorage(SettingsKey.groupAccountsByType) private var groupByType = false
-    @State private var creating = false
+    @AppStorage(SettingsKey.groupAccountsByType) private var groupByType = true
+    @State private var creatingKind: AccountKind?
+    @State private var creatingCard = false
     @State private var reordering = false
 
     var body: some View {
+        let now = Date()
         let ledger = Ledger(accounts: accounts, entries: entries)
+        let reminders = Billing.reminders(ledger: ledger, now: now)
         let cards = AccountLayout.cards(accounts)
         let groups = AccountLayout.moneyGroups(accounts, byType: groupByType)
-        let money = groups.flatMap(\.accounts)
-        let archived = AccountLayout.sorted(accounts.filter { $0.isArchived })
-        let available = money.filter(\.holdsMoney).reduce(0) { $0 + ledger.balance(of: $1) }
-        let bills = cards.reduce(0) { $0 + Billing.status(for: $1, ledger: ledger).due }
+        let money = groups.flatMap(\.accounts).filter(\.holdsMoney)
+        let have = money.reduce(0) { $0 + ledger.balance(of: $1, before: now) }
+        let owed = cards.reduce(0) { $0 + max(-ledger.balance(of: $1, before: now), 0) }
+        let archived = AccountLayout.sorted(accounts.filter(\.isArchived))
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 26) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Available").font(.subheadline).foregroundStyle(.secondary)
-                        Text(Yen.format(available))
-                            .font(.system(size: 44, weight: .bold))
-                            .monospacedDigit()
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.5)
-                        Text(bills > 0
-                             ? "\(Yen.format(available - bills)) after \(Yen.format(bills)) in card bills"
-                             : "No card bills due")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
-                    .padding(.horizontal, 4)
-
-                    if !cards.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            LazyHStack(spacing: 12) {
-                                ForEach(Array(cards.enumerated()), id: \.element.id) { index, card in
-                                    NavigationLink {
-                                        AccountDetailView(account: card)
-                                    } label: {
-                                        CreditCardFace(account: card, ledger: ledger, colorIndex: index)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                            .scrollTargetLayout()
-                        }
-                        .scrollTargetBehavior(.viewAligned)
-                        .contentMargins(.horizontal, 16, for: .scrollContent)
-                        .padding(.horizontal, -16)
-                    }
-
+                VStack(alignment: .leading, spacing: 0) {
+                    netWorth(have: have, owed: owed)
+                        .padding(.top, 8)
                     ForEach(groups) { group in
-                        accountList(group.title, group.accounts, ledger: ledger)
+                        SectionCaps(title: groupTitle(group), trailing: Yen.format(groupTotal(group, ledger: ledger, now: now)))
+                            .padding(.top, Metrics.sectionSpacing)
+                        CardList {
+                            ForEach(Array(group.accounts.enumerated()), id: \.element.id) { index, account in
+                                if index > 0 { ListDivider() }
+                                NavigationLink {
+                                    AccountDetailView(account: account)
+                                } label: {
+                                    MoneyAccountRow(account: account, ledger: ledger, reminders: reminders, now: now)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.top, 8)
+                    }
+                    if !cards.isEmpty {
+                        SectionCaps(title: "Credit cards", trailing: "\(Yen.format(owed)) owed")
+                            .padding(.top, Metrics.sectionSpacing)
+                        CardList {
+                            ForEach(Array(cards.enumerated()), id: \.element.id) { index, card in
+                                if index > 0 { ListDivider(inset: 64) }
+                                NavigationLink {
+                                    AccountDetailView(account: card)
+                                } label: {
+                                    CreditCardRow(card: card, ledger: ledger, reminders: reminders, now: now)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.top, 8)
+                        Text("Owed includes spending that hasn't been billed yet.")
+                            .font(.footnote)
+                            .foregroundStyle(Palette.textSecondary)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 8)
                     }
                     if !archived.isEmpty {
-                        accountList("Archived", archived, ledger: ledger)
-                            .opacity(0.6)
+                        SectionCaps(title: "Archived")
+                            .padding(.top, Metrics.sectionSpacing)
+                        CardList {
+                            ForEach(Array(archived.enumerated()), id: \.element.id) { index, account in
+                                if index > 0 { ListDivider() }
+                                NavigationLink {
+                                    AccountDetailView(account: account)
+                                } label: {
+                                    KRow(account.name, subtitle: account.kind.label, chevron: true) {
+                                        AccountIcon(account: account)
+                                    } trailing: {
+                                        EmptyView()
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.top, 8)
+                        .opacity(0.6)
                     }
                 }
-                .padding(.horizontal)
+                .padding(.horizontal, Metrics.gutter)
                 .padding(.bottom, 24)
             }
-            .background(Color.groupedBackground)
+            .kScreenBackground()
             .navigationTitle("Accounts")
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button("Edit") { reordering = true }
                         .accessibilityHint("Reorder accounts and choose whether to group them by type")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        creating = true
+                    Menu {
+                        Button { creatingKind = .bank } label: { Label("Bank account", systemImage: AccountKind.bank.symbol) }
+                        Button { creatingKind = .topUp } label: { Label("Prepaid wallet", systemImage: "wave.3.right") }
+                        Button { creatingKind = .cash } label: { Label("Cash", systemImage: AccountKind.cash.symbol) }
+                        Button { creatingCard = true } label: { Label("Credit card", systemImage: AccountKind.credit.symbol) }
                     } label: {
                         Image(systemName: "plus")
                     }
                     .accessibilityLabel("Add account")
                 }
             }
-            .sheet(isPresented: $creating) {
-                AccountEditView(account: nil)
+            .sheet(item: $creatingKind) { kind in
+                AccountEditView(account: nil, initialKind: kind)
+            }
+            .sheet(isPresented: $creatingCard) {
+                CardSetupView(card: nil)
             }
             .sheet(isPresented: $reordering) {
                 ReorderAccountsView()
@@ -90,21 +119,174 @@ struct AccountsView: View {
         }
     }
 
-    private func accountList(_ title: String, _ items: [Account], ledger: Ledger) -> some View {
-        VStack(spacing: 10) {
-            SectionHeader(title: title)
-            RowsCard {
-                ForEach(Array(items.enumerated()), id: \.element.id) { index, account in
-                    if index > 0 { RowDivider() }
-                    NavigationLink {
-                        AccountDetailView(account: account)
-                    } label: {
-                        AccountRow(account: account, ledger: ledger)
-                            .padding(.vertical, 12)
-                    }
-                    .buttonStyle(.plain)
-                }
+    private func netWorth(have: Int, owed: Int) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Net worth")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Palette.textSecondary)
+            Text(Yen.format(have - owed))
+                .font(.kStat)
+                .tracking(-0.8)
+                .monospacedDigit()
+                .foregroundStyle(Palette.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .padding(.top, 4)
+            HStack(alignment: .top, spacing: 12) {
+                stat("Money you have", Yen.format(have))
+                stat("Owed on cards", Yen.format(owed))
             }
+            .padding(.top, 14)
+        }
+        .kCard(padding: 18)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func stat(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(title)
+                .font(.footnote)
+                .foregroundStyle(Palette.textSecondary)
+            Text(value)
+                .font(.body.weight(.semibold))
+                .monospacedDigit()
+                .foregroundStyle(Palette.textPrimary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func groupTitle(_ group: AccountGroup) -> String {
+        switch group.id {
+        case AccountKind.bank.rawValue: return "Bank accounts"
+        case AccountKind.topUp.rawValue: return "Prepaid wallets"
+        case AccountKind.cash.rawValue: return "Cash"
+        default: return group.title
+        }
+    }
+
+    private func groupTotal(_ group: AccountGroup, ledger: Ledger, now: Date) -> Int {
+        group.accounts.filter(\.tracksBalance).reduce(0) { $0 + ledger.balance(of: $1, before: now) }
+    }
+}
+
+/// A bank, prepaid or cash account: balance and the one thing worth knowing about it.
+struct MoneyAccountRow: View {
+    let account: Account
+    let ledger: Ledger
+    let reminders: [BillReminder]
+    var now = Date()
+
+    var body: some View {
+        let line = statusLine
+        KRow(account.name, chevron: true) {
+            AccountIcon(account: account)
+        } subtitle: {
+            if line.warning {
+                HStack(spacing: 4) {
+                    Image(systemName: "exclamationmark.triangle.fill").font(.caption2)
+                    Text(line.text)
+                }
+                .fontWeight(.semibold)
+                .foregroundStyle(Palette.warning)
+            } else {
+                Text(line.text)
+            }
+        } trailing: {
+            if account.tracksBalance {
+                let balance = ledger.balance(of: account, before: now)
+                Text(Yen.format(balance))
+                    .font(.body.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(balance < 0 ? Palette.negativeText : Palette.textPrimary)
+            }
+        }
+    }
+
+    private var statusLine: (text: String, warning: Bool) {
+        let paid = reminders.filter { $0.payFrom?.id == account.id }
+        if let short = paid.first(where: { $0.shortfall > 0 }) {
+            return ("\(Yen.format(short.shortfall)) short for \(short.dueDate.formatted(.dateTime.month(.abbreviated).day()))", true)
+        }
+        if !account.tracksBalance {
+            return ("Top-ups count as spending", false)
+        }
+        let cards = ledger.accounts.filter { $0.kind == .credit && !$0.isArchived && $0.payFromAccountID == account.id }
+        if !cards.isEmpty {
+            return ("Pays \(AccountText.list(cards.map(\.name)))", false)
+        }
+        if let last = ledger.entries
+            .filter({ $0.date <= now && Ledger.effect(of: $0, on: account.id) != 0 })
+            .max(by: { $0.date < $1.date }) {
+            let change = Ledger.effect(of: last, on: account.id)
+            let when = Calendar.kakeibo.isDateInToday(last.date) ? "today" : "on \(last.date.formatted(.dateTime.month(.abbreviated).day()))"
+            return ("\(Yen.format(change, showPlus: true)) \(when)", false)
+        }
+        switch account.kind {
+        case .cash: return ("Cash on hand", false)
+        case .topUp: return ("Prepaid balance", false)
+        default: return ("Bank account", false)
+        }
+    }
+}
+
+/// A credit card: the statement due and its date, and the next bill so far.
+struct CreditCardRow: View {
+    let card: Account
+    let ledger: Ledger
+    let reminders: [BillReminder]
+    var now = Date()
+
+    var body: some View {
+        let status = Billing.status(for: card, ledger: ledger, now: now)
+        let short = reminders.first { $0.account.id == card.id }.map { $0.shortfall > 0 } ?? false
+        KRow(card.name, subtitle: "Next bill so far \(Yen.format(status.nextSoFar))", minHeight: 64, chevron: true) {
+            AccountIcon(account: card)
+        } trailing: {
+            if status.due > 0 {
+                AmountStack(Yen.format(status.due)) {
+                    if status.isOverdue {
+                        Text("Overdue").fontWeight(.semibold).foregroundStyle(Palette.negativeText)
+                    } else if short {
+                        Text("Due \(status.dueDate.formatted(.dateTime.month(.abbreviated).day())) · short")
+                            .fontWeight(.semibold)
+                            .foregroundStyle(Palette.warning)
+                    } else {
+                        Text("Due \(status.dueDate.formatted(.dateTime.month(.abbreviated).day()))")
+                    }
+                }
+            } else {
+                AmountStack(Yen.format(max(status.owedNow, 0)), caption: "Nothing due")
+            }
+        }
+    }
+}
+
+enum AccountText {
+    /// "Everyday & Travel cards" when every name ends in "Card", otherwise "A, B & C".
+    static func list(_ names: [String]) -> String {
+        let suffix = " Card"
+        if names.count > 1, names.allSatisfy({ $0.hasSuffix(suffix) }) {
+            let short = names.map { String($0.dropLast(suffix.count)) }
+            return join(short) + " cards"
+        }
+        return join(names)
+    }
+
+    private static func join(_ names: [String]) -> String {
+        guard names.count > 1, let last = names.last else { return names.first ?? "" }
+        return names.dropLast().joined(separator: ", ") + " & " + last
+    }
+}
+
+/// Opens the right page for an account.
+struct AccountDetailView: View {
+    let account: Account
+
+    var body: some View {
+        if account.kind == .credit {
+            CreditCardView(card: account)
+        } else {
+            BankAccountView(account: account)
         }
     }
 }
@@ -114,7 +296,7 @@ struct ReorderAccountsView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \Account.sortOrder) private var accounts: [Account]
-    @AppStorage(SettingsKey.groupAccountsByType) private var groupByType = false
+    @AppStorage(SettingsKey.groupAccountsByType) private var groupByType = true
 
     var body: some View {
         let groups = AccountLayout.editGroups(accounts, byType: groupByType)
@@ -158,253 +340,10 @@ struct ReorderAccountsView: View {
     }
 }
 
-/// A credit account drawn as a card: what's due, when, and the next bill so far.
-struct CreditCardFace: View {
-    let account: Account
-    let ledger: Ledger
-    let colorIndex: Int
-
-    private static let faces: [Color] = [
-        Color(uiColor: UIColor(hex: 0x3B2F80)),
-        Color(uiColor: UIColor(hex: 0x1F4D45)),
-        Color(uiColor: UIColor(hex: 0x4A2F3F)),
-        Color(uiColor: UIColor(hex: 0x2F3A4F)),
-    ]
-
-    var body: some View {
-        let status = Billing.status(for: account, ledger: ledger)
-        let calendar = Calendar.kakeibo
-        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: Date()),
-                                           to: calendar.startOfDay(for: status.dueDate)).day ?? 0
-        let payFrom = ledger.account(account.payFromAccountID)?.name
-        VStack(alignment: .leading) {
-            HStack {
-                Text(account.name).font(.subheadline.weight(.semibold)).lineLimit(1)
-                Spacer()
-                if status.due > 0 && (status.isOverdue || days <= 7) {
-                    Text(status.isOverdue ? "Overdue" : (days == 0 ? "Due today" : "Due in \(days) day\(days == 1 ? "" : "s")"))
-                        .font(.caption.weight(.semibold))
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 4)
-                        .background(Capsule().fill(Color.orange.opacity(0.25)))
-                        .foregroundStyle(Color(uiColor: UIColor(hex: 0xFFC266)))
-                }
-            }
-            Spacer()
-            if status.due > 0 {
-                Text("Due \(status.dueDate.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))")
-                    .font(.footnote)
-                    .foregroundStyle(.white.opacity(0.75))
-                Text(Yen.format(status.due))
-                    .font(.system(size: 30, weight: .bold))
-                    .monospacedDigit()
-            } else {
-                Text("Nothing due").font(.footnote).foregroundStyle(.white.opacity(0.75))
-                Text(Yen.format(max(status.owedNow, 0)))
-                    .font(.system(size: 30, weight: .bold))
-                    .monospacedDigit()
-            }
-            Spacer()
-            HStack {
-                Text("Next bill so far \(Yen.format(status.nextSoFar))")
-                Spacer()
-                if let payFrom { Text("From \(payFrom)").lineLimit(1) }
-            }
-            .font(.footnote)
-            .foregroundStyle(.white.opacity(0.75))
-            .monospacedDigit()
-        }
-        .foregroundStyle(.white)
-        .padding(18)
-        .frame(width: 292, height: 184)
-        .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(Self.faces[colorIndex % Self.faces.count])
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.14), lineWidth: 0.5)
-        )
-        .environment(\.colorScheme, .dark)
-    }
-}
-
-struct AccountRow: View {
-    let account: Account
-    let ledger: Ledger
-
-    var body: some View {
-        HStack(spacing: 12) {
-            IconTile(symbol: account.kind.symbol, size: 40, circle: true, neutral: true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(account.name)
-                if let detail {
-                    Text(detail.text)
-                        .font(.footnote)
-                        .foregroundStyle(detail.warning ? Color.shortfall : Color.secondary)
-                }
-            }
-            Spacer()
-            if account.tracksBalance {
-                let value = ledger.balance(of: account)
-                Text(Yen.format(account.kind == .credit ? max(-value, 0) : value))
-                    .font(.body.weight(.semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(account.kind != .credit && value < 0 ? Color.red : Color.primary)
-            } else {
-                Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
-            }
-        }
-        .contentShape(Rectangle())
-    }
-
-    private var detail: (text: String, warning: Bool)? {
-        if account.kind == .credit {
-            let status = Billing.status(for: account, ledger: ledger)
-            if status.due > 0 {
-                return ("Due \(status.dueDate.formatted(.dateTime.day().month(.abbreviated))): \(Yen.format(status.due))"
-                    + (status.isOverdue ? " (overdue)" : ""), status.isOverdue)
-            }
-            return ("Next bill so far: \(Yen.format(status.nextSoFar))", false)
-        }
-        if !account.tracksBalance {
-            return ("Top-ups count as spending", false)
-        }
-        let shortfall = Billing.reminders(ledger: ledger)
-            .filter { $0.payFrom?.id == account.id }
-            .map(\.shortfall)
-            .max() ?? 0
-        if shortfall > 0 {
-            return ("\(Yen.format(shortfall)) short for bills", true)
-        }
-        if account.kind == .topUp { return ("Top-up", false) }
-        return nil
-    }
-}
-
-struct AccountDetailView: View {
-    let account: Account
-
-    @Environment(\.modelContext) private var context
-    @Query(sort: \Account.sortOrder) private var accounts: [Account]
-    @Query(sort: \BudgetCategory.sortOrder) private var categories: [BudgetCategory]
-    @Query(sort: \Entry.date, order: .reverse) private var entries: [Entry]
-    @State private var editingAccount = false
-    @State private var editing: Entry?
-    @State private var adjusting = false
-    @State private var adjustText = ""
-
-    var body: some View {
-        let ledger = Ledger(accounts: accounts, categories: categories, entries: entries)
-        let lookup = Lookup(accounts: accounts, categories: categories)
-        let related = entries.filter { $0.accountID == account.id || $0.toAccountID == account.id }
-        List {
-            Section {
-                if account.kind == .credit {
-                    creditSummary(ledger: ledger)
-                } else if account.tracksBalance {
-                    LabeledContent("Balance") {
-                        Text(Yen.format(ledger.balance(of: account))).font(.title2.bold()).monospacedDigit()
-                    }
-                } else {
-                    Text("Top-ups to this account count as spending, so it has no balance.")
-                        .foregroundStyle(.secondary)
-                }
-                if account.tracksBalance {
-                    Button(account.kind == .credit ? "Correct unpaid amount" : "Adjust balance") {
-                        let value = ledger.balance(of: account)
-                        adjustText = String(account.kind == .credit ? -value : value)
-                        adjusting = true
-                    }
-                }
-            }
-            Section("Entries") {
-                if related.isEmpty {
-                    Text("No entries yet.").foregroundStyle(.secondary)
-                }
-                ForEach(related.prefix(200)) { entry in
-                    Button {
-                        editing = entry
-                    } label: {
-                        EntryRow(entry: entry, lookup: lookup)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-        .navigationTitle(account.displayName)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Edit") { editingAccount = true }
-            }
-        }
-        .sheet(isPresented: $editingAccount) {
-            AccountEditView(account: account)
-        }
-        .sheet(item: $editing) { entry in
-            EntryEditorRouter(entry: entry)
-        }
-        .alert(account.kind == .credit ? "Real unpaid amount" : "Real balance", isPresented: $adjusting) {
-            TextField("¥", text: $adjustText)
-                .keyboardType(.numbersAndPunctuation)
-            Button("Save") { applyAdjustment(ledger: ledger) }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("The difference is saved as an adjustment. It never counts as spending.")
-        }
-    }
-
-    @ViewBuilder
-    private func creditSummary(ledger: Ledger) -> some View {
-        let status = Billing.status(for: account, ledger: ledger)
-        VStack(alignment: .leading, spacing: 6) {
-            if status.due > 0 {
-                Text("Due \(status.dueDate.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))")
-                    .font(.subheadline)
-                    .foregroundStyle(status.isOverdue ? Color.red : Color.secondary)
-                Text(Yen.format(status.due)).font(.largeTitle.bold()).monospacedDigit()
-            } else {
-                Text("Nothing due right now").font(.subheadline).foregroundStyle(.secondary)
-            }
-            Text("Next bill so far: \(Yen.format(status.nextSoFar)) · due \(status.nextDueDate.formatted(.dateTime.day().month(.abbreviated)))")
-                .font(.subheadline)
-            Text("Closes \(account.closingDay == 31 ? "at end of month" : "on day \(account.closingDay)"), paid on day \(account.paymentDay) of the next month from \(ledger.account(account.payFromAccountID)?.name ?? "(not set)")")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        if status.due > 0 {
-            Button("Record payoff of \(Yen.format(status.due)) now") {
-                recordPayoff(amount: status.due, ledger: ledger)
-            }
-            .disabled(account.payFromAccountID == nil)
-        }
-    }
-
-    private func recordPayoff(amount: Int, ledger: Ledger) {
-        guard let from = account.payFromAccountID else { return }
-        let payoff = Entry(kind: .payoff, amount: amount, date: Date(), accountID: from, toAccountID: account.id)
-        payoff.billCycleKey = Billing.latestCycle(for: account, now: Date()).key(for: account.id)
-        payoff.isConfirmed = true
-        context.insert(payoff)
-        context.saveAndRefresh()
-        Haptics.success()
-    }
-
-    private func applyAdjustment(ledger: Ledger) {
-        guard let real = Yen.parse(adjustText) else { return }
-        let current = ledger.balance(of: account)
-        let target = account.kind == .credit ? -real : real
-        let delta = target - current
-        guard delta != 0 else { return }
-        let entry = Entry(kind: .adjust, amount: delta, date: Date(), accountID: account.id)
-        context.insert(entry)
-        context.saveAndRefresh()
-        Haptics.success()
-    }
-}
-
 struct AccountEditView: View {
     let account: Account?
+    /// Type a new account starts as (the Accounts tab's + menu).
+    var initialKind: AccountKind = .bank
 
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
@@ -504,7 +443,10 @@ struct AccountEditView: View {
     private func load() {
         guard !loaded else { return }
         loaded = true
-        guard let account else { return }
+        guard let account else {
+            kind = initialKind
+            return
+        }
         name = account.name
         emoji = account.emoji
         kind = account.kind

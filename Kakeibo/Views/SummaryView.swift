@@ -222,12 +222,7 @@ struct SummaryView: View {
     // MARK: Actions
 
     private func startTransfer(for reminder: BillReminder, ledger: Ledger, now: Date) {
-        guard let payer = reminder.payFrom else { return }
-        let source = Billing.suggestedSource(for: payer, amount: reminder.shortfall, ledger: ledger, now: now)
-        let date = reminder.dueDate.formatted(.dateTime.month(.abbreviated).day())
-        draft = EntryDraft(kind: .transfer, amount: reminder.shortfall, accountID: source?.id, toAccountID: payer.id,
-                           note: "For \(reminder.account.name) bill",
-                           reason: "Covers the \(reminder.account.name) bill on \(date)")
+        draft = EntryDraft.shortfallTransfer(for: reminder, ledger: ledger, now: now)
     }
 }
 

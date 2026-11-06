@@ -8,7 +8,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKey.defaultAccountID) private var defaultAccountID = ""
     @AppStorage(SettingsKey.partnerName) private var partnerName = SettingsKey.defaultPartnerName
     @AppStorage(SettingsKey.setupDone) private var setupDone = true
-    @AppStorage(SettingsKey.groupAccountsByType) private var groupAccountsByType = false
+    @AppStorage(SettingsKey.groupAccountsByType) private var groupAccountsByType = true
     @State private var reorderingAccounts = false
 
     @State private var shareItem: ShareItem?

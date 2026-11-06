@@ -489,6 +489,48 @@ final class SuggestionTests: XCTestCase {
     }
 }
 
+final class AccountInsightTests: XCTestCase {
+    func testForecastListsScheduledIncomeAndBillsWithBalanceAfter() {
+        let bank = Account(name: "Main Bank", kind: .bank, openingBalance: 184_630)
+        let card = Account(name: "Everyday Card", kind: .credit)
+        card.closingDay = 31
+        card.paymentDay = 27
+        card.payFromAccountID = bank.id
+        let purchase = Entry(kind: .expense, amount: 86_420, date: day(2026, 10, 20), accountID: card.id)
+        let salary = Entry(kind: .income, amount: 318_400, date: day(2026, 11, 25), accountID: bank.id)
+        let ledger = Ledger(accounts: [bank, card], entries: [purchase, salary])
+
+        let forecast = MoneyAccountForecast(account: bank, ledger: ledger, now: day(2026, 11, 18))
+        XCTAssertEqual(forecast.today, 184_630, "Future-dated salary isn't in today's balance")
+        XCTAssertEqual(forecast.upcoming.map(\.amount), [318_400, -86_420])
+        XCTAssertEqual(forecast.upcoming.map(\.balanceAfter), [503_030, 416_610])
+        XCTAssertNil(forecast.firstShortBill)
+        XCTAssertEqual(forecast.past.count, 29)
+        XCTAssertEqual(forecast.future.last?.balance, 416_610)
+    }
+
+    func testPastStatementsFindTheirPayment() {
+        let bank = Account(name: "Main Bank", kind: .bank, openingBalance: 100_000)
+        let card = Account(name: "Store Card", kind: .credit)
+        card.closingDay = 10
+        card.paymentDay = 2
+        card.payFromAccountID = bank.id
+        card.creditLimit = 300_000
+        let september = Entry(kind: .expense, amount: 38_600, date: day(2026, 9, 20), accountID: card.id)
+        let paid = Entry(kind: .payoff, amount: 38_600, date: day(2026, 11, 2, hour: 9), accountID: bank.id, toAccountID: card.id)
+        paid.billCycleKey = Billing.cycle(year: 2026, month: 10, rule: card.billingRule).key(for: card.id)
+        paid.isAutoCreated = true
+        let october = Entry(kind: .expense, amount: 42_800, date: day(2026, 10, 20), accountID: card.id)
+        let ledger = Ledger(accounts: [bank, card], entries: [september, paid, october])
+
+        let statements = CardHistory.pastStatements(for: card, ledger: ledger, now: day(2026, 11, 18))
+        XCTAssertEqual(statements.first?.amount, 38_600, "Sep 11 – Oct 10")
+        XCTAssertEqual(statements.first?.payment?.id, paid.id)
+        XCTAssertTrue(statements.first?.isPaid ?? false)
+        XCTAssertEqual(card.available(ledger: ledger), 300_000 - 42_800)
+    }
+}
+
 final class FeedbackLogicTests: XCTestCase {
     func testKeypadReportsKeysThatDoNothing() {
         XCTAssertEqual(KeypadView.apply("5", to: 12), 125)

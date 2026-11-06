@@ -34,9 +34,11 @@ shoot 03-transactions transactions
 shoot 03b-transaction transaction
 shoot 04-budgets budgets
 shoot 05-accounts accounts
-shoot 05b-accounts-grouped accounts-grouped
+shoot 05b-accounts-flat accounts-flat
 shoot 05c-edit-accounts edit-accounts
 shoot 06-card-detail card
+shoot 06b-bank-account bank
+shoot 06c-card-setup card-setup
 shoot 07-partner partner
 shoot 08-review review
 shoot 09-categories categories

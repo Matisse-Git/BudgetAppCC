@@ -27,13 +27,16 @@ enum Seed {
         olive.closingDay = 31
         olive.paymentDay = 26
         olive.payFromAccountID = smbcBank.id
+        olive.colorKey = CardColor.teal.rawValue
         let rakuten = Account(name: "Rakuten Card", kind: .credit, sortOrder: 2)
         rakuten.closingDay = 31
         rakuten.paymentDay = 27
         rakuten.payFromAccountID = smbcBank.id
+        rakuten.colorKey = CardColor.raspberry.rawValue
         let paidy = Account(name: "Paidy", kind: .credit, emoji: "🅿️", sortOrder: 3)
         paidy.closingDay = 31
         paidy.paymentDay = 27
+        paidy.colorKey = CardColor.violet.rawValue
         let revolut = Account(name: "Revolut", kind: .topUp, emoji: "🌍", sortOrder: 4)
         let paypay = Account(name: "PayPay", kind: .topUp, emoji: "📲", sortOrder: 5)
         let pasmo = Account(name: "PASMO", kind: .topUp, emoji: "🚃", sortOrder: 6)

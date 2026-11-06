@@ -180,3 +180,15 @@ struct EntryDraft: Identifiable {
     /// Why this draft exists, shown above the amount ("Covers the Store Card bill on Dec 2").
     var reason: String?
 }
+
+extension EntryDraft {
+    /// A transfer that tops up a bill's paying account by the shortfall, from the account with the most money.
+    static func shortfallTransfer(for reminder: BillReminder, ledger: Ledger, now: Date = Date()) -> EntryDraft? {
+        guard let payer = reminder.payFrom else { return nil }
+        let source = Billing.suggestedSource(for: payer, amount: reminder.shortfall, ledger: ledger, now: now)
+        let date = reminder.dueDate.formatted(.dateTime.month(.abbreviated).day())
+        return EntryDraft(kind: .transfer, amount: reminder.shortfall, accountID: source?.id, toAccountID: payer.id,
+                          note: "For \(reminder.account.name) bill",
+                          reason: "Covers the \(reminder.account.name) bill on \(date)")
+    }
+}

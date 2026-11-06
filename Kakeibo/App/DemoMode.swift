@@ -23,6 +23,8 @@ struct DemoScreen: View {
     var body: some View {
         if name == "edit-accounts" {
             ReorderAccountsView()
+        } else if name == "card-setup" {
+            CardSetupView(card: nil)
         } else {
             screens
         }
@@ -34,6 +36,12 @@ struct DemoScreen: View {
             case "card":
                 if let card = accounts.first(where: { $0.name == "Rakuten Card" }) {
                     AccountDetailView(account: card)
+                } else {
+                    ProgressView()
+                }
+            case "bank":
+                if let bank = accounts.first(where: { $0.name == "SMBC bank" }) {
+                    AccountDetailView(account: bank)
                 } else {
                     ProgressView()
                 }
@@ -58,7 +66,7 @@ struct DemoScreen: View {
         }
     }
 
-    static let standalone: Set<String> = ["card", "transaction", "partner", "settings", "categories", "review", "edit-accounts"]
+    static let standalone: Set<String> = ["card", "bank", "card-setup", "transaction", "partner", "settings", "categories", "review", "edit-accounts"]
 }
 
 enum DemoData {
@@ -99,7 +107,7 @@ enum DemoData {
         let order = ["SMBC bank", "SMBC Olive credit", "Rakuten Card", "Paidy", "Cash", "Revolut", "PayPay", "PASMO"]
         for a in accounts { a.sortOrder = order.firstIndex(of: a.name) ?? order.count }
         // Grouping is a real setting; demo screens set it so each screenshot is predictable.
-        UserDefaults.standard.set(DemoMode.screen == "accounts-grouped", forKey: SettingsKey.groupAccountsByType)
+        UserDefaults.standard.set(DemoMode.screen != "accounts-flat", forKey: SettingsKey.groupAccountsByType)
 
         var entries: [Entry] = []
         func add(_ kind: EntryKind, _ amount: Int, _ when: Date, from: String?, to: String? = nil, category name: String? = nil,

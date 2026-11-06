@@ -156,7 +156,7 @@ struct RootView: View {
         showSetup = screen == "setup"
         if screen == "add" { addDraft = EntryDraft() }
         let tabs: [String: AppTab] = ["transactions": .activity, "budgets": .budgets, "budgets-all": .budgets,
-                                      "accounts": .accounts, "accounts-grouped": .accounts]
+                                      "accounts": .accounts, "accounts-flat": .accounts]
         tab = tabs[screen] ?? .summary
         Maintenance.run(context, autoPayoffs: false)
     }
