@@ -29,6 +29,34 @@ enum AccountKind: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+/// Where a card payment goes when its day is a weekend or a Japanese bank holiday.
+enum HolidayShift: String, Codable, CaseIterable, Identifiable {
+    case nextBusinessDay = "next"
+    case previousBusinessDay = "previous"
+    case none
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .nextBusinessDay: return "Next business day"
+        case .previousBusinessDay: return "Previous business day"
+        case .none: return "Keep the date"
+        }
+    }
+}
+
+/// When a card's statement closes and when it's paid.
+struct BillingRule: Equatable {
+    /// 1–31; 31 means the last day of the month.
+    var closingDay = 31
+    /// 1–31; 31 means the last day of the month.
+    var paymentDay = 27
+    /// 0 = same month as closing, 1 = next month, 2 = month after next.
+    var paymentMonthOffset = 1
+    var shift: HolidayShift = .nextBusinessDay
+}
+
 enum CategoryKind: String, Codable, CaseIterable, Identifiable {
     case expense, income
 
@@ -79,10 +107,23 @@ final class Account {
     // Credit accounts
     /// Day of month the statement closes (締め日). 31 = end of month.
     var closingDay: Int = 31
-    /// Day of the following month the bill is paid (支払日).
+    /// Day of the month the bill is paid (支払日), `paymentMonthOffset` months after closing.
     var paymentDay: Int = 27
     var payFromAccountID: UUID? = nil
     var autoPayoff: Bool = true
+    /// Months between closing and payment: 0 = same month, 1 = next month (the usual), 2 = month after next.
+    var paymentMonthOffset: Int = 1
+    /// What happens when the payment day isn't a business day (`HolidayShift`).
+    var holidayShiftRaw: String = HolidayShift.nextBusinessDay.rawValue
+    /// Credit limit in yen. 0 means not set.
+    var creditLimit: Int = 0
+    /// Remind 3 days and 1 day before each payment.
+    var paymentReminder: Bool = true
+    /// Warn when the paying account won't cover a bill on its due date.
+    var shortfallWarning: Bool = true
+
+    /// Card face colour (`CardColor`) or account hue (`Hue`). Empty picks a lasting default.
+    var colorKey: String = ""
 
     // Top-up accounts
     /// When true, topping up counts as spending (e.g. PASMO → Transport) and no balance is tracked.
@@ -114,6 +155,17 @@ final class Account {
 
     /// Accounts that can pay a card bill or receive money.
     var holdsMoney: Bool { kind != .credit && tracksBalance }
+
+    var holidayShift: HolidayShift {
+        get { HolidayShift(rawValue: holidayShiftRaw) ?? .nextBusinessDay }
+        set { holidayShiftRaw = newValue.rawValue }
+    }
+
+    /// Closing and payment rules of a credit account.
+    var billingRule: BillingRule {
+        BillingRule(closingDay: closingDay, paymentDay: paymentDay,
+                    paymentMonthOffset: paymentMonthOffset, shift: holidayShift)
+    }
 
     var displayName: String { "\(emoji) \(name)" }
 }

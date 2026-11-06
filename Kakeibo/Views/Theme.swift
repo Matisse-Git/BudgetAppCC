@@ -53,6 +53,14 @@ struct AccountLook {
     let hue: Hue
 
     static func of(_ account: Account) -> AccountLook {
+        let base = defaultLook(account)
+        if let chosen = Hue(rawValue: account.colorKey) {
+            return AccountLook(symbol: base.symbol, hue: chosen)
+        }
+        return base
+    }
+
+    private static func defaultLook(_ account: Account) -> AccountLook {
         switch account.kind {
         case .bank:
             return AccountLook(symbol: "building.columns.fill", hue: .blue)
@@ -76,7 +84,7 @@ struct AccountLook {
 
     /// Colour of a credit card's face.
     static func cardColor(_ account: Account) -> CardColor {
-        CardColor.fallback(for: account.id.uuidString)
+        CardColor(rawValue: account.colorKey) ?? CardColor.fallback(for: account.id.uuidString)
     }
 }
 

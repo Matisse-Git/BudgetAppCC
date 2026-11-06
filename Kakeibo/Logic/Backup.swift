@@ -31,6 +31,13 @@ enum Backup {
         var topUpCategoryID: UUID?
         var walletCardName: String
         var shareScope: String?
+        // Added with the canvas redesign; optional so older backups still restore.
+        var paymentMonthOffset: Int?
+        var holidayShiftRaw: String?
+        var creditLimit: Int?
+        var paymentReminder: Bool?
+        var shortfallWarning: Bool?
+        var colorKey: String?
 
         init(_ a: Account) {
             id = a.id; name = a.name; emoji = a.emoji; kindRaw = a.kindRaw; openingBalance = a.openingBalance
@@ -38,6 +45,8 @@ enum Backup {
             closingDay = a.closingDay; paymentDay = a.paymentDay; payFromAccountID = a.payFromAccountID
             autoPayoff = a.autoPayoff; countsTopUpAsSpending = a.countsTopUpAsSpending; topUpCategoryID = a.topUpCategoryID
             walletCardName = a.walletCardName; shareScope = a.shareScope
+            paymentMonthOffset = a.paymentMonthOffset; holidayShiftRaw = a.holidayShiftRaw; creditLimit = a.creditLimit
+            paymentReminder = a.paymentReminder; shortfallWarning = a.shortfallWarning; colorKey = a.colorKey
         }
 
         func make() -> Account {
@@ -46,6 +55,12 @@ enum Backup {
             a.closingDay = closingDay; a.paymentDay = paymentDay; a.payFromAccountID = payFromAccountID
             a.autoPayoff = autoPayoff; a.countsTopUpAsSpending = countsTopUpAsSpending; a.topUpCategoryID = topUpCategoryID
             a.walletCardName = walletCardName; a.shareScope = shareScope
+            a.paymentMonthOffset = paymentMonthOffset ?? 1
+            a.holidayShiftRaw = holidayShiftRaw ?? HolidayShift.nextBusinessDay.rawValue
+            a.creditLimit = creditLimit ?? 0
+            a.paymentReminder = paymentReminder ?? true
+            a.shortfallWarning = shortfallWarning ?? true
+            a.colorKey = colorKey ?? ""
             return a
         }
     }

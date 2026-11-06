@@ -115,8 +115,55 @@ final class BillingTests: XCTestCase {
         XCTAssertEqual(february.closingBoundary, day(2026, 3, 1, hour: 0))
         XCTAssertEqual(february.paymentDate, day(2026, 3, 27, hour: 0))
 
+        // Jan 10, 2027 is a Sunday and Jan 11 is Coming of Age Day, so the money leaves on Tuesday the 12th.
         let december = Billing.cycle(year: 2026, month: 12, closingDay: 15, paymentDay: 10)
-        XCTAssertEqual(december.paymentDate, day(2027, 1, 10, hour: 0))
+        XCTAssertEqual(december.nominalPaymentDate, day(2027, 1, 10, hour: 0))
+        XCTAssertEqual(december.paymentDate, day(2027, 1, 12, hour: 0))
+        XCTAssertEqual(december.start, day(2026, 11, 16, hour: 0))
+        XCTAssertEqual(december.closingDate, day(2026, 12, 15, hour: 0))
+    }
+
+    // The canvas's own examples (Card bills sticky note, CreditCard and CardSetup artboards).
+    func testPaymentsMoveOffWeekendsAndBankHolidays() {
+        let everyday = BillingRule(closingDay: 31, paymentDay: 27)
+        let november = Billing.cycle(year: 2026, month: 11, rule: everyday)
+        XCTAssertEqual(november.nominalPaymentDate, day(2026, 12, 27, hour: 0), "Sunday")
+        XCTAssertEqual(november.paymentDate, day(2026, 12, 28, hour: 0))
+        XCTAssertEqual(Billing.shiftCause(of: november), .weekend(weekday: day(2026, 12, 27).formatted(.dateTime.weekday(.wide))))
+
+        let store = BillingRule(closingDay: 10, paymentDay: 2)
+        let storeNovember = Billing.cycle(year: 2026, month: 11, rule: store)
+        XCTAssertEqual(storeNovember.start, day(2026, 10, 11, hour: 0))
+        XCTAssertEqual(storeNovember.paymentDate, day(2026, 12, 2, hour: 0))
+        XCTAssertFalse(storeNovember.isShifted)
+        // Sat Jan 2 → Jan 3 is a Sunday and both are bank holidays → Mon Jan 4.
+        let storeDecember = Billing.cycle(year: 2026, month: 12, rule: store)
+        XCTAssertEqual(storeDecember.paymentDate, day(2027, 1, 4, hour: 0))
+
+        var earlier = everyday
+        earlier.shift = .previousBusinessDay
+        XCTAssertEqual(Billing.cycle(year: 2026, month: 11, rule: earlier).paymentDate, day(2026, 12, 25, hour: 0))
+        var fixed = everyday
+        fixed.shift = .none
+        XCTAssertEqual(Billing.cycle(year: 2026, month: 11, rule: fixed).paymentDate, day(2026, 12, 27, hour: 0))
+    }
+
+    func testPaymentMonthOffset() {
+        let sameMonth = BillingRule(closingDay: 5, paymentDay: 27, paymentMonthOffset: 0)
+        XCTAssertEqual(Billing.cycle(year: 2026, month: 11, rule: sameMonth).paymentDate, day(2026, 11, 27, hour: 0))
+        let monthAfterNext = BillingRule(closingDay: 15, paymentDay: 10, paymentMonthOffset: 2)
+        XCTAssertEqual(Billing.cycle(year: 2026, month: 10, rule: monthAfterNext).paymentDate, day(2026, 12, 10, hour: 0))
+        // A same-month payment day before closing can only mean next month.
+        let impossible = BillingRule(closingDay: 20, paymentDay: 10, paymentMonthOffset: 0)
+        XCTAssertEqual(Billing.cycle(year: 2026, month: 11, rule: impossible).nominalPaymentDate, day(2026, 12, 10, hour: 0))
+    }
+
+    func testPurchaseBelongsToTheCycleItClosesIn() {
+        let store = BillingRule(closingDay: 10, paymentDay: 2)
+        let cycle = Billing.cycle(containing: day(2026, 11, 17), rule: store)
+        XCTAssertEqual(cycle.closingDate, day(2026, 12, 10, hour: 0))
+        XCTAssertEqual(cycle.paymentDate, day(2027, 1, 4, hour: 0))
+        XCTAssertEqual(Billing.cycle(containing: day(2026, 11, 10, hour: 23), rule: store).closingDate, day(2026, 11, 10, hour: 0))
     }
 
     func testDueAndNextBill() {
@@ -180,7 +227,101 @@ final class BillingTests: XCTestCase {
         let reminders = Billing.reminders(ledger: ledger, now: day(2026, 11, 22))
         XCTAssertEqual(reminders.count, 1)
         XCTAssertEqual(reminders.first?.shortfall, 2000)
-        XCTAssertTrue(Billing.reminders(ledger: ledger, now: day(2026, 11, 5)).isEmpty, "Outside the 7-day window")
+        // The warning appears as soon as the statement closes, not just in the last week.
+        XCTAssertEqual(Billing.reminders(ledger: ledger, now: day(2026, 11, 2)).first?.shortfall, 2000)
+        XCTAssertTrue(Billing.reminders(ledger: ledger, now: day(2026, 11, 5), windowDays: 7).isEmpty)
+    }
+
+    func testShortfallCountsScheduledIncomeAndEarlierBills() {
+        let bank = Account(name: "Main Bank", kind: .bank, openingBalance: 30_000)
+        let card = rakuten()
+        card.payFromAccountID = bank.id
+        let other = Account(name: "Store Card", kind: .credit)
+        other.closingDay = 10
+        other.paymentDay = 2
+        other.payFromAccountID = bank.id
+        let purchase = Entry(kind: .expense, amount: 50_000, date: day(2026, 10, 10), accountID: card.id)
+        let storePurchase = Entry(kind: .expense, amount: 40_000, date: day(2026, 11, 5), accountID: other.id)
+        let now = day(2026, 11, 18)
+
+        let short = Billing.reminders(ledger: Ledger(accounts: [bank, card, other], entries: [purchase, storePurchase]), now: now)
+        XCTAssertEqual(short.map(\.account.name), ["Rakuten Card", "Store Card"], "Soonest first")
+        XCTAssertEqual(short.first?.shortfall, 20_000)
+        XCTAssertEqual(short.last?.shortfall, 60_000, "Counts the earlier bill from the same account")
+
+        // Salary dated the 25th lands before the 27th: the first bill is covered.
+        let salary = Entry(kind: .income, amount: 100_000, date: day(2026, 11, 25), accountID: bank.id)
+        let covered = Billing.reminders(ledger: Ledger(accounts: [bank, card, other], entries: [purchase, storePurchase, salary]), now: now)
+        XCTAssertEqual(covered.first?.projectedBalance, 130_000)
+        XCTAssertEqual(covered.first?.shortfall, 0)
+        XCTAssertEqual(covered.last?.shortfall, 0)
+
+        other.shortfallWarning = false
+        let muted = Billing.reminders(ledger: Ledger(accounts: [bank, card, other], entries: [purchase, storePurchase]), now: now)
+        XCTAssertEqual(muted.last?.shortfall, 0)
+    }
+
+    func testReminderDatesAreThreeAndOneDayBefore() {
+        let dates = Billing.reminderDates(dueDate: day(2026, 12, 2, hour: 0), now: day(2026, 11, 18))
+        XCTAssertEqual(dates, [day(2026, 11, 29, hour: 9), day(2026, 12, 1, hour: 9)])
+        XCTAssertEqual(Billing.reminderDates(dueDate: day(2026, 12, 2, hour: 0), now: day(2026, 11, 30)), [day(2026, 12, 1, hour: 9)])
+    }
+}
+
+@MainActor
+final class ShiftedPayoffTests: XCTestCase {
+    func testAutoPayoffWaitsForTheShiftedPaymentDay() throws {
+        let container = try ModelContainer(for: Account.self, BudgetCategory.self, Entry.self,
+                                           configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = container.mainContext
+        let defaults = UserDefaults(suiteName: "ShiftedPayoff-\(UUID().uuidString)")!
+        let bank = Account(name: "Main Bank", kind: .bank, openingBalance: 100_000)
+        let card = Account(name: "Everyday Card", kind: .credit)
+        card.closingDay = 31
+        card.paymentDay = 27
+        card.payFromAccountID = bank.id
+        card.createdAt = day(2026, 10, 1)
+        let purchase = Entry(kind: .expense, amount: 8_000, date: day(2026, 11, 17), accountID: card.id)
+        [bank, card].forEach { context.insert($0) }
+        context.insert(purchase)
+
+        // Dec 27 is a Sunday: nothing is recorded until Monday the 28th.
+        XCTAssertEqual(Billing.runAutoPayoffs(context: context, accounts: [bank, card], entries: [purchase],
+                                              now: day(2026, 12, 27, hour: 20), defaults: defaults), 0)
+        XCTAssertEqual(Billing.runAutoPayoffs(context: context, accounts: [bank, card], entries: [purchase],
+                                              now: day(2026, 12, 28, hour: 10), defaults: defaults), 1)
+        let payoff = try XCTUnwrap(try context.fetch(FetchDescriptor<Entry>()).first { $0.kind == .payoff })
+        XCTAssertEqual(payoff.date, day(2026, 12, 28, hour: 9))
+        XCTAssertTrue(payoff.isAutoCreated)
+    }
+}
+
+final class HolidayTests: XCTestCase {
+    func testJapaneseHolidays2026() {
+        let holidays = JapaneseHolidays.holidays(in: 2026).map { "\($0.month)/\($0.day)" }
+        XCTAssertEqual(holidays, [
+            "1/1", "1/2", "1/3", "1/12", "2/11", "2/23", "3/20", "4/29", "5/3", "5/4", "5/5", "5/6",
+            "7/20", "8/11", "9/21", "9/22", "9/23", "10/12", "11/3", "11/23", "12/31",
+        ])
+        XCTAssertEqual(JapaneseHolidays.name(of: day(2026, 5, 6)), "Substitute Holiday")
+        XCTAssertEqual(JapaneseHolidays.name(of: day(2026, 9, 22)), "Citizens' Holiday")
+        XCTAssertEqual(JapaneseHolidays.name(of: day(2026, 1, 2)), "Bank holiday")
+    }
+
+    func testBusinessDays() {
+        XCTAssertFalse(JapaneseHolidays.isBusinessDay(day(2026, 11, 3)), "Culture Day")
+        XCTAssertFalse(JapaneseHolidays.isBusinessDay(day(2026, 11, 21)), "Saturday")
+        XCTAssertTrue(JapaneseHolidays.isBusinessDay(day(2026, 11, 18)))
+        XCTAssertEqual(JapaneseHolidays.nextBusinessDay(onOrAfter: day(2026, 5, 2)), day(2026, 5, 7, hour: 0), "Golden Week")
+        XCTAssertEqual(JapaneseHolidays.previousBusinessDay(onOrBefore: day(2027, 1, 3)), day(2026, 12, 30, hour: 0))
+    }
+
+    func testOrdinals() {
+        XCTAssertEqual(Ordinal.day(1), "1st")
+        XCTAssertEqual(Ordinal.day(2), "2nd")
+        XCTAssertEqual(Ordinal.day(13), "13th")
+        XCTAssertEqual(Ordinal.day(22), "22nd")
+        XCTAssertEqual(Ordinal.day(31), "end of month")
     }
 }
 
@@ -226,8 +367,8 @@ final class InsightsTests: XCTestCase {
 
         XCTAssertEqual(summary.spent, 10_000)
         XCTAssertEqual(summary.left, 30_000)
-        XCTAssertEqual(summary.daysLeft, 20)
-        XCTAssertEqual(summary.perDay, 1_500)
+        XCTAssertEqual(summary.daysLeft, 19, "Days after today, as on the canvas (day 18 of 30 leaves 12)")
+        XCTAssertEqual(summary.perDay, 1_578)
         XCTAssertEqual(summary.cumulative.count, 11)
         XCTAssertEqual(summary.previous.count, 31)
     }
@@ -241,6 +382,68 @@ final class InsightsTests: XCTestCase {
     func testShortYenLabels() {
         XCTAssertEqual(Yen.short(200_000), "¥200k")
         XCTAssertEqual(Yen.short(950), "¥950")
+    }
+}
+
+final class PaceTests: XCTestCase {
+    private func ledger() -> Ledger {
+        let bank = Account(name: "Bank", kind: .bank)
+        func category(_ name: String, _ budget: Int, _ order: Int) -> BudgetCategory {
+            BudgetCategory(name: name, emoji: "", kind: .expense, sortOrder: order, monthlyBudget: budget)
+        }
+        let dining = category("Dining Out", 25_000, 0)
+        let cafe = category("Café & Snacks", 8_000, 1)
+        let transport = category("Transport", 12_000, 2)
+        let rent = category("Rent", 82_000, 3)
+        let groceries = category("Groceries", 42_000, 4)
+        let utilities = category("Utilities", 0, 5)
+        func spend(_ amount: Int, _ month: Int, _ d: Int, _ c: BudgetCategory) -> Entry {
+            Entry(kind: .expense, amount: amount, date: day(2026, month, d), accountID: bank.id, categoryID: c.id)
+        }
+        let entries = [
+            spend(26_800, 11, 17, dining), spend(6_920, 11, 10, cafe), spend(6_840, 11, 5, transport),
+            spend(82_000, 11, 1, rent), spend(22_260, 11, 12, groceries), spend(9_840, 11, 6, utilities),
+            spend(24_300, 10, 12, dining), spend(6_900, 10, 25, dining),
+        ]
+        return Ledger(accounts: [bank], categories: [dining, cafe, transport, rent, groceries, utilities], entries: entries)
+    }
+
+    func testCategoriesSortByAttention() {
+        let pace = BudgetPace(ledger: ledger(), month: day(2026, 11, 18), now: day(2026, 11, 18))
+        XCTAssertEqual(pace.daysElapsed, 18)
+        XCTAssertEqual(pace.daysRemaining, 12)
+        XCTAssertEqual(pace.needsAttention.map(\.category.name), ["Dining Out", "Café & Snacks"])
+        XCTAssertEqual(pace.needsAttention.map(\.status), [.over, .atRisk])
+        XCTAssertEqual(pace.needsAttention.last?.runsOutDay, 21, "¥6,920 of ¥8,000 by the 18th runs out around the 21st")
+        XCTAssertEqual(pace.onTrack.map(\.category.name), ["Rent", "Transport", "Groceries"], "Rent is exactly used up, not at risk")
+        XCTAssertEqual(pace.unbudgeted.map(\.category.name), ["Utilities"])
+        XCTAssertEqual(pace.needsAttention.first?.vsPrevious, 2_500, "Like for like: only Oct 1–18 counts")
+    }
+
+    func testTotalsPaceAndComparison() {
+        let pace = BudgetPace(ledger: ledger(), month: day(2026, 11, 18), now: day(2026, 11, 18))
+        XCTAssertEqual(pace.budget, 169_000)
+        XCTAssertEqual(pace.spent, 154_660)
+        XCTAssertEqual(pace.pace, 101_400)
+        XCTAssertEqual(pace.status, .atRisk)
+        XCTAssertEqual(pace.perDay, 1_195)
+        XCTAssertEqual(pace.previousSameDays, 24_300)
+        XCTAssertEqual(pace.comparisonLabel(), "\(day(2026, 10, 1).formatted(.dateTime.month(.abbreviated))) 1–18")
+
+        let october = BudgetPace(ledger: ledger(), month: day(2026, 10, 5), now: day(2026, 11, 18))
+        XCTAssertFalse(october.isCurrentMonth)
+        XCTAssertEqual(october.daysElapsed, 31)
+        XCTAssertEqual(october.perDay, 0)
+        XCTAssertEqual(october.spent, 31_200)
+    }
+
+    func testCategoryPaceStatus() {
+        let food = BudgetCategory(name: "Food", emoji: "", kind: .expense, sortOrder: 0, monthlyBudget: 30_000)
+        XCTAssertEqual(BudgetPace.categoryPace(food, spent: 10_000, elapsed: 15, days: 30, previous: 0).status, .onTrack)
+        XCTAssertEqual(BudgetPace.categoryPace(food, spent: 20_000, elapsed: 15, days: 30, previous: 0).status, .atRisk)
+        XCTAssertEqual(BudgetPace.categoryPace(food, spent: 20_000, elapsed: 15, days: 30, previous: 0).runsOutDay, 23)
+        XCTAssertEqual(BudgetPace.categoryPace(food, spent: 30_001, elapsed: 15, days: 30, previous: 0).status, .over)
+        XCTAssertEqual(BudgetPace.categoryPace(food, spent: 30_000, elapsed: 2, days: 30, previous: 0).status, .onTrack)
     }
 }
 
