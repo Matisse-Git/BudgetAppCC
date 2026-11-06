@@ -60,17 +60,49 @@ enum Yen {
     }
 }
 
-/// Small summary the app writes for the widget.
+/// The next unpaid card bill, for the widget.
+struct NextBillSnapshot: Codable {
+    var cardName: String
+    /// `CardColor` raw value.
+    var colorKey: String
+    var amount: Int
+    var dueDate: Date
+    var payerName: String?
+    var shortfall: Int
+}
+
+/// Small summary the app writes for the widget. Fields added later are optional so an older snapshot
+/// still decodes.
 struct WidgetSnapshot: Codable {
     var monthTitle: String
     var spent: Int
     var budget: Int
     var partnerOwed: Int
     var updatedAt: Date
+    var daysElapsed: Int? = nil
+    var daysInMonth: Int? = nil
+    var perDay: Int? = nil
+    /// "onTrack", "atRisk" or "over".
+    var paceStatus: String? = nil
+    /// The category that most needs a look, e.g. "Dining Out ¥1,800 over".
+    var alert: String? = nil
+    var nextBill: NextBillSnapshot? = nil
 
     static let key = "widgetSnapshot"
 
-    static let placeholder = WidgetSnapshot(monthTitle: "November", spent: 84_300, budget: 150_000, partnerOwed: 6_200, updatedAt: Date())
+    static let placeholder = WidgetSnapshot(
+        monthTitle: "November", spent: 74_820, budget: 130_000, partnerOwed: 0, updatedAt: Date(),
+        daysElapsed: 18, daysInMonth: 30, perDay: 4_600, paceStatus: "onTrack", alert: "Dining Out ¥1,800 over",
+        nextBill: NextBillSnapshot(cardName: "Everyday Card", colorKey: "blue", amount: 86_420,
+                                   dueDate: Date().addingTimeInterval(9 * 86_400), payerName: "Main Bank", shortfall: 0)
+    )
+
+    var left: Int { budget - spent }
+    var fraction: Double { budget > 0 ? Double(spent) / Double(budget) : 0 }
+    var paceFraction: Double? {
+        guard let daysElapsed, let daysInMonth, daysInMonth > 0 else { return nil }
+        return Double(daysElapsed) / Double(daysInMonth)
+    }
 
     static func load() -> WidgetSnapshot? {
         guard let data = AppGroup.defaults.data(forKey: key) else { return nil }

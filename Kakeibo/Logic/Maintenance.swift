@@ -86,16 +86,35 @@ enum Maintenance {
     }
 
     static func writeWidgetSnapshot(_ ledger: Ledger, now: Date = Date()) {
-        let interval = Ledger.monthInterval(containing: now)
-        let budget = ledger.categories
-            .filter { $0.kind == .expense && !$0.isArchived }
-            .reduce(0) { $0 + $1.monthlyBudget }
+        let pace = BudgetPace(ledger: ledger, month: now, now: now)
+        let status: String
+        switch pace.status {
+        case .onTrack: status = "onTrack"
+        case .atRisk: status = "atRisk"
+        case .over: status = "over"
+        }
+        let alert = pace.needsAttention.first.map { item in
+            item.status == .over
+                ? "\(item.category.name) \(Yen.format(item.spent - item.budget)) over"
+                : "\(item.category.name) \(Yen.format(item.left)) left"
+        }
+        let bill = Billing.reminders(ledger: ledger, now: now).first.map { reminder in
+            NextBillSnapshot(cardName: reminder.account.name, colorKey: AccountLook.cardColor(reminder.account).rawValue,
+                             amount: reminder.due, dueDate: reminder.dueDate, payerName: reminder.payFrom?.name,
+                             shortfall: reminder.shortfall)
+        }
         WidgetSnapshot(
             monthTitle: now.formatted(.dateTime.month(.wide)),
-            spent: ledger.totalSpending(in: interval),
-            budget: budget,
+            spent: pace.spent,
+            budget: pace.budget,
             partnerOwed: ledger.partnerOwed,
-            updatedAt: now
+            updatedAt: now,
+            daysElapsed: pace.daysElapsed,
+            daysInMonth: pace.daysInMonth,
+            perDay: pace.perDay,
+            paceStatus: status,
+            alert: alert,
+            nextBill: bill
         ).save()
         WidgetCenter.shared.reloadAllTimelines()
     }
