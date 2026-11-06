@@ -548,6 +548,31 @@ final class AccountInsightTests: XCTestCase {
     }
 }
 
+final class WordingTests: XCTestCase {
+    func testStatementPeriodsAndShiftReasons() {
+        let everyday = Billing.cycle(year: 2026, month: 11, rule: BillingRule(closingDay: 31, paymentDay: 27))
+        let month = day(2026, 11, 1).formatted(.dateTime.month(.abbreviated))
+        XCTAssertEqual(BillingText.period(everyday), "\(month) 1–30")
+        let weekday = day(2026, 12, 27).formatted(.dateTime.weekday(.wide))
+        XCTAssertEqual(BillingText.shiftReason(everyday), "the 27th is a \(weekday)")
+
+        let store = Billing.cycle(year: 2026, month: 11, rule: BillingRule(closingDay: 10, paymentDay: 2))
+        XCTAssertTrue(BillingText.period(store).contains(" – "), "Across two months: Oct 11 – Nov 10")
+        XCTAssertNil(BillingText.shiftReason(store), "Wed Dec 2 doesn't move")
+
+        // Culture Day (Tue Nov 3, 2026) moves a 3rd-of-the-month payment to Wednesday the 4th.
+        let culture = Billing.cycle(year: 2026, month: 10, rule: BillingRule(closingDay: 15, paymentDay: 3))
+        XCTAssertEqual(culture.paymentDate, day(2026, 11, 4, hour: 0))
+        XCTAssertEqual(BillingText.shiftReason(culture), "the 3rd is Culture Day")
+    }
+
+    func testAccountLists() {
+        XCTAssertEqual(AccountText.list(["Everyday Card", "Travel Card"]), "Everyday & Travel cards")
+        XCTAssertEqual(AccountText.list(["Rakuten Card"]), "Rakuten Card")
+        XCTAssertEqual(AccountText.list(["Olive", "Rakuten Card", "Paidy"]), "Olive, Rakuten Card & Paidy")
+    }
+}
+
 final class FeedbackLogicTests: XCTestCase {
     func testKeypadReportsKeysThatDoNothing() {
         XCTAssertEqual(KeypadView.apply("5", to: 12), 125)
