@@ -98,8 +98,12 @@ struct EntryEditorView: View {
                 }
                 TextField("Note (optional)", text: $note)
                     .textFieldStyle(.roundedBorder)
-                KeypadView(amount: $amount)
+
+                // Everything you touch while entering sits in the bottom half, in reach of one thumb:
+                // categories right above the number pad, the pad itself at the very bottom.
+                Spacer(minLength: 0)
                 if kind == .transfer {
+                    KeypadView(amount: $amount)
                     Button {
                         save(categoryID: nil)
                     } label: {
@@ -109,13 +113,15 @@ struct EntryEditorView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(!canSaveTransfer)
-                    Spacer(minLength: 0)
                 } else {
                     categoryGrid
+                    KeypadView(amount: $amount)
                 }
             }
             .padding(.horizontal)
             .padding(.bottom, 8)
+            // Typing a note brings up the keyboard over the number pad instead of squashing the screen.
+            .ignoresSafeArea(.keyboard, edges: .bottom)
             .navigationTitle(editing == nil ? "New entry" : "Edit entry")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -227,8 +233,19 @@ struct EntryEditorView: View {
         .background(Capsule().fill(Color.tileFill))
     }
 
+    /// Hugs its tiles so they sit right on top of the number pad; scrolls only if there are too many to fit.
     private var categoryGrid: some View {
-        ScrollView {
+        ViewThatFits(in: .vertical) {
+            categoryTiles
+            ScrollView {
+                categoryTiles
+            }
+            .defaultScrollAnchor(.bottom)
+        }
+    }
+
+    private var categoryTiles: some View {
+        VStack {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
                 ForEach(visibleCategories) { category in
                     Button {
