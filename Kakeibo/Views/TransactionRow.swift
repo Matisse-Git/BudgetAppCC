@@ -165,6 +165,7 @@ struct EntryDraft: Identifiable {
     var toAccountID: UUID?
     var categoryID: UUID?
     var note: String = ""
+    var merchant: String = ""
     /// Why this draft exists, shown above the amount ("Covers the Store Card bill on Dec 2").
     var reason: String?
 }

@@ -12,6 +12,10 @@ enum SettingsKey {
     static let monthStartDay = "monthStartDay"
     /// Show shortfall warnings on Summary and send their notifications (on by default).
     static let shortfallWarnings = "shortfallWarnings"
+    /// Pre-pick category and account in the add sheet from history (on by default).
+    static let suggestCategory = "suggestCategory"
+    /// Taps on the add sheet's keypad (on by default; iOS's System Haptics switch still wins).
+    static let keypadHaptics = "keypadHaptics"
     /// Accounts tab: split non-credit accounts into Bank, Top-up and Cash. Off shows one "Money" list.
     static let groupAccountsByType = "groupAccountsByType"
 

@@ -142,50 +142,102 @@ struct DayPicker: View {
     }
 }
 
-/// Number pad used by the add-entry screen.
+/// The Quick Add keypad (canvas Foundations): 58 pt keys, 00 and 000 for yen, Save in the thumb zone.
+///
+///     1   2   3   ⌫
+///     4   5   6   ┐
+///     7   8   9   Save
+///     00  0   000 ┘
 struct KeypadView: View {
     @Binding var amount: Int
-    private let keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "000", "0", "⌫"]
+    var canSave: Bool
+    var saveTitle: String = "Save"
+    var onSave: () -> Void
+    @AppStorage(SettingsKey.keypadHaptics) private var haptics = true
+
+    private let spacing = Metrics.keySpacing
 
     var body: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
-            ForEach(keys, id: \.self) { key in
-                Button {
-                    press(key)
-                } label: {
-                    Group {
-                        if key == "⌫" {
-                            Image(systemName: "delete.left")
-                        } else {
-                            Text(key)
-                        }
-                    }
-                    .font(.system(size: 26, weight: .medium))
-                    .monospacedDigit()
-                    .frame(maxWidth: .infinity, minHeight: 50)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(KeyButtonStyle())
-                .accessibilityLabel(key == "⌫" ? "Delete" : key)
+        HStack(spacing: spacing) {
+            column(["1", "4", "7", "00"])
+            column(["2", "5", "8", "0"])
+            column(["3", "6", "9", "000"])
+            VStack(spacing: spacing) {
+                key("⌫")
+                saveKey
+                    .frame(height: Metrics.keyHeight * 3 + spacing * 2)
             }
         }
     }
 
+    private func column(_ keys: [String]) -> some View {
+        VStack(spacing: spacing) {
+            ForEach(keys, id: \.self) { key($0) }
+        }
+    }
+
+    private func key(_ key: String) -> some View {
+        Button {
+            press(key)
+        } label: {
+            Group {
+                if key == "⌫" {
+                    Image(systemName: "delete.left")
+                        .font(.system(size: 24, weight: .regular))
+                } else {
+                    Text(key)
+                        .font(.system(size: key.count > 1 ? 24 : 26, weight: .medium))
+                }
+            }
+            .foregroundStyle(Palette.textPrimary)
+            .frame(maxWidth: .infinity)
+            .frame(height: Metrics.keyHeight)
+            .background(RoundedRectangle(cornerRadius: Metrics.keyRadius, style: .continuous).fill(Palette.controlFill))
+            .contentShape(RoundedRectangle(cornerRadius: Metrics.keyRadius, style: .continuous))
+        }
+        .buttonStyle(KeyButtonStyle())
+        .accessibilityLabel(key == "⌫" ? "Delete" : key)
+    }
+
+    private var saveKey: some View {
+        Button {
+            onSave()
+        } label: {
+            VStack(spacing: 6) {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 24, weight: .bold))
+                Text(saveTitle)
+                    .font(.headline)
+            }
+            .foregroundStyle(Color.white.opacity(canSave ? 1 : 0.55))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: Metrics.keyRadius, style: .continuous)
+                    .fill(Palette.accentFill.opacity(canSave ? 1 : 0.32))
+            )
+            .contentShape(RoundedRectangle(cornerRadius: Metrics.keyRadius, style: .continuous))
+        }
+        .buttonStyle(KeyButtonStyle())
+        .disabled(!canSave)
+        .accessibilityLabel(saveTitle)
+    }
+
     private func press(_ key: String) {
         let next = KeypadView.apply(key, to: amount)
-        if next == amount {
-            Haptics.blocked()
-        } else {
-            Haptics.key()
+        if haptics {
+            if next == amount { Haptics.blocked() } else { Haptics.key() }
         }
         amount = next
     }
 
     /// The amount after pressing `key`. Returns the same amount when the key does nothing.
+    /// Amounts stop at nine digits.
     nonisolated static func apply(_ key: String, to amount: Int) -> Int {
         switch key {
         case "⌫":
             return amount / 10
+        case "00":
+            return amount > 0 && amount < 10_000_000 ? amount * 100 : amount
         case "000":
             return amount > 0 && amount < 1_000_000 ? amount * 1000 : amount
         default:
@@ -195,14 +247,11 @@ struct KeypadView: View {
     }
 }
 
-/// Keypad key: no box, a soft highlight while pressed.
+/// Keys dim a little while pressed.
 struct KeyButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.key.opacity(configuration.isPressed ? 1 : 0))
-            )
+            .opacity(configuration.isPressed ? 0.6 : 1)
     }
 }
 

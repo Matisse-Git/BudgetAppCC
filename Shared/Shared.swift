@@ -33,6 +33,11 @@ enum Yen {
         return f
     }()
 
+    /// "11,300": the number without the yen sign, for the keypad display.
+    static func digits(_ value: Int) -> String {
+        formatter.string(from: NSNumber(value: abs(value))) ?? "\(abs(value))"
+    }
+
     static func format(_ value: Int, showPlus: Bool = false) -> String {
         let body = formatter.string(from: NSNumber(value: abs(value))) ?? "\(abs(value))"
         if value < 0 { return "−¥" + body }

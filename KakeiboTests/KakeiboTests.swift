@@ -441,6 +441,44 @@ final class PaceTests: XCTestCase {
     }
 }
 
+final class SuggestionTests: XCTestCase {
+    func testPicksCategoryByTimeOfDayAndAccountByLastUse() {
+        let wallet = Account(name: "Wallet", kind: .cash)
+        let qr = Account(name: "QR Pay", kind: .topUp)
+        let dining = BudgetCategory(name: "Dining Out", emoji: "", kind: .expense, sortOrder: 0)
+        let cafe = BudgetCategory(name: "Café & Snacks", emoji: "", kind: .expense, sortOrder: 1)
+        var entries: [Entry] = []
+        // Weekday lunches out, morning coffees on QR Pay.
+        for d in [2, 3, 4, 5, 9, 10, 11, 12] {
+            entries.append(Entry(kind: .expense, amount: 980, date: day(2026, 11, d, hour: 12), accountID: wallet.id, categoryID: dining.id))
+            let coffee = Entry(kind: .expense, amount: 150, date: day(2026, 11, d, hour: 8), accountID: qr.id, categoryID: cafe.id)
+            entries.append(coffee)
+        }
+        let categories = [dining, cafe]
+        let lunch = Calendar.kakeibo.date(from: DateComponents(year: 2026, month: 11, day: 18, hour: 12, minute: 41))!
+        let morning = Calendar.kakeibo.date(from: DateComponents(year: 2026, month: 11, day: 18, hour: 8, minute: 10))!
+        XCTAssertEqual(Suggestions.category(kind: .expense, at: lunch, entries: entries, categories: categories), dining.id)
+        XCTAssertEqual(Suggestions.category(kind: .expense, at: morning, entries: entries, categories: categories), cafe.id)
+        XCTAssertNil(Suggestions.category(kind: .income, at: lunch, entries: entries, categories: categories))
+        XCTAssertEqual(Suggestions.account(forCategory: cafe.id, kind: .expense, entries: entries, accounts: [wallet, qr]), qr.id)
+    }
+
+    func testTilesKeepTheUsersOrderAndIncludeTheSelection() {
+        let names = ["Rent", "Utilities", "Phone", "Transport", "Supermarket", "Konbini", "Restaurants", "Shopping", "Subscriptions", "Other"]
+        let categories = names.enumerated().map { BudgetCategory(name: $0.element, emoji: "", kind: .expense, sortOrder: $0.offset) }
+        let used = ["Konbini", "Restaurants", "Supermarket", "Transport", "Shopping", "Other", "Subscriptions"]
+        let entries = used.compactMap { name in
+            categories.first { $0.name == name }.map { Entry(kind: .expense, amount: 500, date: day(2026, 11, 10), categoryID: $0.id) }
+        }
+        let tiles = Suggestions.tiles(kind: .expense, selected: nil, limit: 7, entries: entries, categories: categories, now: day(2026, 11, 18))
+        XCTAssertEqual(tiles.map(\.name), ["Transport", "Supermarket", "Konbini", "Restaurants", "Shopping", "Subscriptions", "Other"])
+        let rent = categories[0]
+        let withRent = Suggestions.tiles(kind: .expense, selected: rent.id, limit: 7, entries: entries, categories: categories, now: day(2026, 11, 18))
+        XCTAssertTrue(withRent.contains { $0.id == rent.id })
+        XCTAssertEqual(withRent.count, 7)
+    }
+}
+
 final class FeedbackLogicTests: XCTestCase {
     func testKeypadReportsKeysThatDoNothing() {
         XCTAssertEqual(KeypadView.apply("5", to: 12), 125)
@@ -452,6 +490,9 @@ final class FeedbackLogicTests: XCTestCase {
         XCTAssertEqual(KeypadView.apply("000", to: 0), 0)
         XCTAssertEqual(KeypadView.apply("000", to: 2_000_000), 2_000_000)
         XCTAssertEqual(KeypadView.apply("7", to: 100_000_000), 100_000_000)
+        XCTAssertEqual(KeypadView.apply("00", to: 98), 9_800)
+        XCTAssertEqual(KeypadView.apply("00", to: 0), 0)
+        XCTAssertEqual(KeypadView.apply("00", to: 10_000_000), 10_000_000, "Stops at nine digits")
     }
 
     func testOverBudgetUsesMyShareAndTheEntrysMonth() {

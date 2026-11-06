@@ -56,7 +56,7 @@ struct SummaryView: View {
                 }
             }
             .sheet(item: $draft) { draft in
-                EntryEditorView(mode: .new, initialKind: draft.kind, draft: draft)
+                EntryEditorView(mode: .new, draft: draft)
             }
             .sheet(item: $editing) { entry in
                 EntryEditorRouter(entry: entry)
