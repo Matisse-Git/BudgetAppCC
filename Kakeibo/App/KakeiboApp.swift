@@ -1,5 +1,6 @@
 import SwiftData
 import SwiftUI
+import UIKit
 
 @main
 struct KakeiboApp: App {
@@ -19,8 +20,10 @@ struct RootView: View {
     @AppStorage(SettingsKey.defaultAccountID) private var defaultAccountID = ""
 
     @State private var showAdd = false
+    @State private var addKind: EntryKind = .expense
     @State private var showSetup = false
-    @State private var tab = 0
+    @State private var tab: AppTab = .summary
+    @State private var keyboardShown = false
 
     var body: some View {
         if let screen = DemoMode.screen, DemoScreen.standalone.contains(screen) {
@@ -31,23 +34,34 @@ struct RootView: View {
         }
     }
 
+    /// Every tab stays alive (keeping its navigation stack) and the floating bar sits on top, so it also
+    /// shows on pushed screens as in the canvas.
     private var tabs: some View {
-        TabView(selection: $tab) {
-            HomeView(showAdd: $showAdd, tab: $tab)
-                .tabItem { Label("Home", systemImage: "house") }
-                .tag(0)
-            TransactionsView()
-                .tabItem { Label("Activity", systemImage: "list.bullet") }
-                .tag(1)
-            BudgetsView()
-                .tabItem { Label("Budgets", systemImage: "chart.pie") }
-                .tag(2)
-            AccountsView()
-                .tabItem { Label("Accounts", systemImage: "creditcard") }
-                .tag(3)
+        ZStack {
+            ForEach(AppTab.allCases) { item in
+                tabContent(item)
+                    .opacity(tab == item ? 1 : 0)
+                    .allowsHitTesting(tab == item)
+                    .accessibilityHidden(tab != item)
+            }
         }
-        .sheet(isPresented: $showAdd) {
-            EntryEditorView(mode: .new)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if !keyboardShown {
+                KakeiboTabBar(selection: $tab, onAdd: { kind in
+                    addKind = kind
+                    showAdd = true
+                })
+            }
+        }
+        .tint(Palette.accentTint)
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+            keyboardShown = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            keyboardShown = false
+        }
+        .sheet(isPresented: $showAdd, onDismiss: { addKind = .expense }) {
+            EntryEditorView(mode: .new, initialKind: addKind)
         }
         .fullScreenCover(isPresented: $showSetup) {
             SetupView {
@@ -92,6 +106,16 @@ struct RootView: View {
         }
     }
 
+    @ViewBuilder
+    private func tabContent(_ item: AppTab) -> some View {
+        switch item {
+        case .summary: HomeView(showAdd: $showAdd, tab: $tab)
+        case .activity: TransactionsView()
+        case .budgets: BudgetsView()
+        case .accounts: AccountsView()
+        }
+    }
+
     /// Fills an in-memory database with sample data and opens the requested screen.
     private func startDemo() {
         guard (try? context.fetchCount(FetchDescriptor<Account>())) == 0 else { return }
@@ -101,8 +125,9 @@ struct RootView: View {
         setupDone = screen != "setup"
         showSetup = screen == "setup"
         showAdd = screen == "add"
-        let tabs = ["transactions": 1, "budgets": 2, "budgets-all": 2, "accounts": 3, "accounts-grouped": 3]
-        tab = tabs[screen] ?? 0
+        let tabs: [String: AppTab] = ["transactions": .activity, "budgets": .budgets, "budgets-all": .budgets,
+                                      "accounts": .accounts, "accounts-grouped": .accounts]
+        tab = tabs[screen] ?? .summary
         Maintenance.run(context, autoPayoffs: false)
     }
 }

@@ -111,7 +111,7 @@ private struct SplitCard: View {
             let value = summary.spending[category.id] ?? 0
             guard value > 0 else { continue }
             let look = CategoryLook.of(category)
-            if look.isHighlighted {
+            if named.count < 6 {
                 named.append(Segment(id: category.id.uuidString, title: category.name, value: value, color: look.tint))
             } else {
                 rest += value

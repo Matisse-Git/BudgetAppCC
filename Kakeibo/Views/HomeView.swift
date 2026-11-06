@@ -4,7 +4,7 @@ import SwiftUI
 
 struct HomeView: View {
     @Binding var showAdd: Bool
-    @Binding var tab: Int
+    @Binding var tab: AppTab
 
     @Query(sort: \Account.sortOrder) private var accounts: [Account]
     @Query(sort: \BudgetCategory.sortOrder) private var categories: [BudgetCategory]
@@ -143,7 +143,7 @@ struct HomeView: View {
         case .recent:
             recentSection
         case .budgets:
-            BudgetsPreview(categories: categories, summary: summary) { tab = 2 }
+            BudgetsPreview(categories: categories, summary: summary) { tab = .budgets }
         case .partner:
             partnerRow(owed: ledger.partnerOwed)
         }
@@ -156,7 +156,7 @@ struct HomeView: View {
         if !recent.isEmpty {
             VStack(spacing: 10) {
                 SectionHeader(title: "Recent") {
-                    Button("See all") { tab = 1 }
+                    Button("See all") { tab = .activity }
                 }
                 RowsCard {
                     ForEach(Array(recent.enumerated()), id: \.element.id) { index, entry in

@@ -2,10 +2,11 @@ import SwiftUI
 import UIKit
 
 extension Color {
-    static let groupedBackground = Color(uiColor: .systemGroupedBackground)
-    static let card = Color(uiColor: .secondarySystemGroupedBackground)
-    static let chip = Color(uiColor: .secondarySystemBackground)
-    static let key = Color(uiColor: .tertiarySystemFill)
+    // Legacy names for the old screens; new code uses `Palette` directly.
+    static let groupedBackground = Palette.background
+    static let card = Palette.card
+    static let chip = Palette.chipFill
+    static let key = Palette.controlFill
 }
 
 struct CardStyle: ViewModifier {
@@ -13,7 +14,7 @@ struct CardStyle: ViewModifier {
         content
             .padding()
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Color.card))
+            .background(RoundedRectangle(cornerRadius: Metrics.cardRadius, style: .continuous).fill(Palette.card))
     }
 }
 

@@ -257,7 +257,7 @@ struct EntryEditorView: View {
                             if let symbol = look.symbol {
                                 Image(systemName: symbol)
                                     .font(.system(size: 19, weight: .medium))
-                                    .foregroundStyle(look.isHighlighted || category.kind == .income ? look.tint : Color.secondary)
+                                    .foregroundStyle(look.tint)
                             } else {
                                 Text(category.emoji).font(.title3)
                             }
