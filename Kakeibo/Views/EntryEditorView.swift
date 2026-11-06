@@ -26,6 +26,8 @@ struct EntryEditorView: View {
     let mode: Mode
     /// Type a new entry starts as (Home's Transfer button opens it as a transfer).
     var initialKind: EntryKind = .expense
+    /// Starting values for a new entry, e.g. a transfer that fixes a shortfall.
+    var draft: EntryDraft? = nil
 
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
@@ -311,9 +313,15 @@ struct EntryEditorView: View {
                 customShare = entry.partnerShare
             }
         } else {
-            kind = initialKind
+            kind = draft?.kind ?? initialKind
             let preferred = UUID(uuidString: defaultAccountID)
             accountID = spendAccounts.first { $0.id == preferred }?.id ?? spendAccounts.first?.id
+            if let draft {
+                amount = draft.amount
+                if let from = draft.accountID { accountID = from }
+                toAccountID = draft.toAccountID
+                note = draft.note
+            }
             if DemoMode.isOn {
                 amount = 3_600
                 split = .half

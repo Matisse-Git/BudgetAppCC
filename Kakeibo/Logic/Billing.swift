@@ -244,6 +244,18 @@ enum Billing {
         return reminders
     }
 
+    /// The account to top up `payer` from: the other money account with the most in it today, preferring
+    /// one that can cover `amount` on its own.
+    static func suggestedSource(for payer: Account, amount: Int, ledger: Ledger, now: Date = Date(),
+                                calendar: Calendar = .kakeibo) -> Account? {
+        let endOfToday = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)) ?? now
+        let balances = ledger.accounts
+            .filter { $0.holdsMoney && !$0.isArchived && $0.id != payer.id }
+            .map { (account: $0, balance: ledger.balance(of: $0, before: endOfToday)) }
+        let covering = balances.filter { $0.balance >= amount }
+        return (covering.isEmpty ? balances : covering).max { $0.balance < $1.balance }?.account
+    }
+
     /// When the reminders for a bill go out: 9:00, three days and one day before it's due (future ones only).
     static func reminderDates(dueDate: Date, now: Date = Date(), calendar: Calendar = .kakeibo) -> [Date] {
         [3, 1].compactMap { daysBefore in

@@ -10,10 +10,8 @@ enum SettingsKey {
     static let partnerName = "partnerName"
     /// Stored for later payday-based months; v1 always uses calendar months.
     static let monthStartDay = "monthStartDay"
-    /// Order of the movable sections on Home, comma separated.
-    static let homeSectionOrder = "homeSectionOrder"
-    /// Home sections the user has hidden, comma separated.
-    static let homeHiddenSections = "homeHiddenSections"
+    /// Show shortfall warnings on Summary and send their notifications (on by default).
+    static let shortfallWarnings = "shortfallWarnings"
     /// Accounts tab: split non-credit accounts into Bank, Top-up and Cash. Off shows one "Money" list.
     static let groupAccountsByType = "groupAccountsByType"
 

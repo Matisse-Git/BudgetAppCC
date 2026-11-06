@@ -373,12 +373,6 @@ final class InsightsTests: XCTestCase {
         XCTAssertEqual(summary.previous.count, 31)
     }
 
-    func testHomeSectionOrderKeepsKnownSectionsAndAddsNewOnes() {
-        XCTAssertEqual(HomeSection.order(from: "budgets,bogus,recent,budgets"), [.budgets, .recent, .bills, .partner])
-        XCTAssertEqual(HomeSection.hidden(from: "partner,nope"), [.partner])
-        XCTAssertEqual(HomeSection.encode([.recent, .bills]), "recent,bills")
-    }
-
     func testShortYenLabels() {
         XCTAssertEqual(Yen.short(200_000), "¥200k")
         XCTAssertEqual(Yen.short(950), "¥950")

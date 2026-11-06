@@ -282,3 +282,49 @@ private struct MonthsChart: View {
         }
     }
 }
+
+/// Icon, name, what's left, a thin bar and "¥x of ¥y".
+struct CategoryBudgetRow: View {
+    let category: BudgetCategory
+    let spent: Int
+    var compact = false
+
+    var body: some View {
+        let budget = category.isArchived ? 0 : category.monthlyBudget
+        let over = budget > 0 && spent > budget
+        let look = CategoryLook.of(category)
+        HStack(spacing: 12) {
+            CategoryTile(category: category, size: compact ? 36 : 40)
+            VStack(alignment: .leading, spacing: compact ? 7 : 8) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(category.name).font(compact ? .callout : .body)
+                    Spacer()
+                    Text(note(budget: budget, over: over))
+                        .font(compact ? .footnote : .subheadline)
+                        .fontWeight(over ? .semibold : .regular)
+                        .foregroundStyle(over ? Color.shortfall : Color.secondary)
+                        .monospacedDigit()
+                }
+                if budget > 0 {
+                    ProgressBar(fraction: Double(spent) / Double(budget), isOver: over,
+                                tint: look.tint, height: compact ? 5 : 6)
+                }
+                if !compact && budget > 0 {
+                    Text("\(Yen.format(spent)) of \(Yen.format(budget))")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+            }
+        }
+    }
+
+    private func note(budget: Int, over: Bool) -> String {
+        guard budget > 0 else { return Yen.format(spent) }
+        if over { return "\(Yen.format(spent - budget)) over" }
+        if !compact { return "\(Yen.format(budget - spent)) left" }
+        if spent == budget { return "Paid · \(Yen.format(spent))" }
+        if spent == 0 { return "Nothing yet · \(Yen.format(budget))" }
+        return "\(Yen.format(spent)) of \(Yen.format(budget))"
+    }
+}

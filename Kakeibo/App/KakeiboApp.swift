@@ -109,7 +109,7 @@ struct RootView: View {
     @ViewBuilder
     private func tabContent(_ item: AppTab) -> some View {
         switch item {
-        case .summary: HomeView(showAdd: $showAdd, tab: $tab)
+        case .summary: SummaryView(tab: $tab)
         case .activity: TransactionsView()
         case .budgets: BudgetsView()
         case .accounts: AccountsView()

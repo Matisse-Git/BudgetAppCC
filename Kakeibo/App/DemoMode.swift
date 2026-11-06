@@ -20,9 +20,7 @@ struct DemoScreen: View {
     @Query(sort: \Account.sortOrder) private var accounts: [Account]
 
     var body: some View {
-        if name == "edit-home" {
-            EditHomeView(order: .constant(HomeSection.defaultOrder), hidden: .constant(""))
-        } else if name == "edit-accounts" {
+        if name == "edit-accounts" {
             ReorderAccountsView()
         } else {
             screens
@@ -52,7 +50,7 @@ struct DemoScreen: View {
         }
     }
 
-    static let standalone: Set<String> = ["card", "partner", "settings", "categories", "review", "edit-home", "edit-accounts"]
+    static let standalone: Set<String> = ["card", "partner", "settings", "categories", "review", "edit-accounts"]
 }
 
 enum DemoData {

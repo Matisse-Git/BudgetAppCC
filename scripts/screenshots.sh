@@ -40,7 +40,6 @@ shoot 07-partner partner
 shoot 08-review review
 shoot 09-categories categories
 shoot 10-setup setup
-shoot 11-edit-home edit-home
 shoot 04b-budgets-all budgets-all
 xcrun simctl ui "$UDID" appearance dark
 shoot 12-home-dark home
