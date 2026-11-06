@@ -84,6 +84,9 @@ struct TransactionsView: View {
                         .accessibilityLabel("Jump to month")
                         .disabled(months.isEmpty)
                     }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        AddEntryButton()
+                    }
                 }
             }
         }

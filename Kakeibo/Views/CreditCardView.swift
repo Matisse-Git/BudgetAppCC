@@ -24,6 +24,10 @@ struct CreditCardView: View {
             VStack(alignment: .leading, spacing: 0) {
                 CardFace(name: card.name, color: color, available: card.available(ledger: ledger),
                          rule: BillingText.rule(card))
+                if let usage = card.limitUsage(ledger: ledger, now: now) {
+                    LimitUsageCard(usage: usage, color: color)
+                        .padding(.top, 16)
+                }
                 if shortfallWarnings, let reminder, reminder.shortfall > 0 {
                     PaymentWarning(reminder: reminder, now: now, onTransfer: {
                         draft = EntryDraft.shortfallTransfer(for: reminder, ledger: ledger, now: now)
@@ -300,6 +304,51 @@ struct CardFace: View {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5)
         )
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// How much of the credit limit is in use, with a marker where the alert fires.
+struct LimitUsageCard: View {
+    let usage: LimitUsage
+    let color: CardColor
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Credit limit")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Palette.textPrimary)
+                Spacer()
+                Text("\(usage.percent)% used")
+                    .font(.subheadline.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(usage.isPastAlert ? Palette.warning : Palette.textSecondary)
+            }
+            BudgetBar(fraction: usage.fraction, pace: usage.alertFraction,
+                      tint: usage.isPastAlert ? Palette.warning : color.bright)
+                .padding(.top, 12)
+            HStack {
+                Text("\(Yen.format(usage.owed)) of \(Yen.format(usage.limit))")
+                Spacer()
+                Text("\(Yen.format(max(usage.available, 0))) available")
+            }
+            .font(.footnote)
+            .monospacedDigit()
+            .foregroundStyle(Palette.textSecondary)
+            .padding(.top, 8)
+            if let amount = usage.alertAmount {
+                Label(usage.isPastAlert
+                      ? "Past your \(usage.alertPercent)% alert (\(Yen.format(amount)))"
+                      : "Alert at \(usage.alertPercent)% · \(Yen.format(amount))",
+                      systemImage: usage.isPastAlert ? "exclamationmark.triangle.fill" : "bell")
+                    .font(.footnote.weight(usage.isPastAlert ? .semibold : .regular))
+                    .monospacedDigit()
+                    .foregroundStyle(usage.isPastAlert ? Palette.warning : Palette.textSecondary)
+                    .padding(.top, 6)
+            }
+        }
+        .kCard()
         .accessibilityElement(children: .combine)
     }
 }

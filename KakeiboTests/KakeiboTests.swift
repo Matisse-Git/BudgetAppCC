@@ -546,6 +546,32 @@ final class AccountInsightTests: XCTestCase {
         XCTAssertTrue(statements.first?.isPaid ?? false)
         XCTAssertEqual(card.available(ledger: ledger), 300_000 - 42_800)
     }
+
+    func testLimitAlertAtAPercentage() {
+        let olive = Account(name: "Olive", kind: .credit)
+        olive.creditLimit = 100_000
+        olive.limitAlertPercent = 45
+        let spent = Entry(kind: .expense, amount: 44_000, date: day(2026, 11, 3), accountID: olive.id)
+        let below = Ledger(accounts: [olive], entries: [spent])
+        let usage = olive.limitUsage(ledger: below, now: day(2026, 11, 18))
+        XCTAssertEqual(usage?.percent, 44)
+        XCTAssertEqual(usage?.alertAmount, 45_000)
+        XCTAssertFalse(usage?.isPastAlert ?? true)
+        XCTAssertTrue(CreditLimits.pastAlert(ledger: below, now: day(2026, 11, 18)).isEmpty)
+
+        let lunch = Entry(kind: .expense, amount: 1_500, date: day(2026, 11, 10), accountID: olive.id)
+        let past = Ledger(accounts: [olive], entries: [spent, lunch])
+        let after = try! XCTUnwrap(olive.limitUsage(ledger: past, now: day(2026, 11, 18)))
+        XCTAssertTrue(after.isPastAlert)
+        XCTAssertTrue(CreditLimits.crosses(after, adding: 1_500), "This purchase took it over")
+        XCTAssertFalse(CreditLimits.crosses(after, adding: 100), "Already past before")
+        XCTAssertEqual(CreditLimits.pastAlert(ledger: past, now: day(2026, 11, 18)).map(\.card.name), ["Olive"])
+
+        olive.limitAlertPercent = 0
+        XCTAssertFalse(olive.limitUsage(ledger: past, now: day(2026, 11, 18))?.isPastAlert ?? true, "Alert off")
+        olive.creditLimit = 0
+        XCTAssertNil(olive.limitUsage(ledger: past, now: day(2026, 11, 18)), "No limit set")
+    }
 }
 
 final class WordingTests: XCTestCase {

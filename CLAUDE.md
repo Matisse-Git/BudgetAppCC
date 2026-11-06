@@ -95,7 +95,7 @@ shows without a sign, income as `+¥318,400` in green, account histories use a t
 `Metrics`: 16 pt gutter, 24 pt card radius (22 for grouped rows in sheets), 16 pt card padding, 28 pt
 between sections, 62 pt rows (50 compact), 32 pt row icons (square r = 0.28 × size for categories,
 circle for accounts, 36 × 24 mini card for credit cards), 44 pt buttons, 58 pt keypad keys (r 16, 8 gap),
-62 pt tab bar.
+the tab bar is the system one.
 
 ### SF Symbols
 
@@ -116,8 +116,10 @@ Tabs: Summary `house`, Activity `list.bullet`, Budgets `chart.pie`, Accounts `cr
 `kCard()`, `CardList` + `ListDivider`, `KRow`, `AmountStack`, `Chevron`, `CategoryIcon`, `SymbolTile`,
 `AccountIcon`, `MiniCard`, `SectionTitle`, `SectionCaps`, `BudgetBar` (fill + pace tick, red past
 100%), `StatusChip`, `AutoBadge`, `PillButtonStyle` (`.pill`, `.pillSecondary`), `UndoToast`,
-`GlassBackground` (glass on iOS 26, material before), `KakeiboTabBar`. Elsewhere: `TransactionRow` and
+`GlassBackground` (glass on iOS 26, material before). `TabBar.swift`: `AppTab`, `AddEntryButton` (the + in
+navigation bars, fed by the `quickAdd` environment value). Elsewhere: `TransactionRow` and
 `EntryPresentation` (how an entry reads), `InfoRow`, `TimelineStep`, `CardFace`, `KeypadView`, `ActionTile`,
-`FilterChip`. Long lists that need swipe actions use an inset-grouped `List` with `.listRowInsets(EdgeInsets())`
+`FilterChip`, `LimitUsageCard`. Yen inputs use `YenField` (never `TextField(value:format:)`, which only
+commits on Return and the number pad has none). Long lists that need swipe actions use an inset-grouped `List` with `.listRowInsets(EdgeInsets())`
 and `Palette.card` row backgrounds; links without a chevron use a hidden `NavigationLink` in `.background`.
-Navigation bars are the system ones (glass back and Edit buttons on iOS 26).
+Navigation and tab bars are the system ones (Liquid Glass on iOS 26).

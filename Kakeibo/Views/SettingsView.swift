@@ -182,13 +182,13 @@ struct SettingsView: View {
         .onChange(of: eveningMinutes) { _, _ in BillNotifications.scheduleEveningReminder() }
         .onChange(of: billReminders) { _, _ in Maintenance.run(context, autoPayoffs: false) }
         .onChange(of: shortfallWarnings) { _, _ in Maintenance.run(context, autoPayoffs: false) }
-        .sensoryFeedback(.selection, trigger: suggests)
-        .sensoryFeedback(.selection, trigger: keypadHaptics)
-        .sensoryFeedback(.selection, trigger: eveningReminder)
-        .sensoryFeedback(.selection, trigger: billReminders)
-        .sensoryFeedback(.selection, trigger: shortfallWarnings)
-        .sensoryFeedback(.selection, trigger: faceIDLock)
-        .sensoryFeedback(.selection, trigger: hideInSwitcher)
+        .sensoryFeedback(.firmSelection, trigger: suggests)
+        .sensoryFeedback(.firmSelection, trigger: keypadHaptics)
+        .sensoryFeedback(.firmSelection, trigger: eveningReminder)
+        .sensoryFeedback(.firmSelection, trigger: billReminders)
+        .sensoryFeedback(.firmSelection, trigger: shortfallWarnings)
+        .sensoryFeedback(.firmSelection, trigger: faceIDLock)
+        .sensoryFeedback(.firmSelection, trigger: hideInSwitcher)
         .sheet(isPresented: $reorderingAccounts) {
             ReorderAccountsView()
         }
@@ -372,7 +372,7 @@ struct CategoryEditView: View {
                 if category != nil {
                     Section {
                         Toggle("Archived", isOn: $archived)
-                            .sensoryFeedback(.selection, trigger: archived)
+                            .sensoryFeedback(.firmSelection, trigger: archived)
                     } footer: {
                         Text("Archived categories disappear from the add screen but keep their history.")
                     }

@@ -36,6 +36,9 @@ These decisions were agreed before any code was written. Update this file when a
   or a Japanese bank holiday (next business day by default, previous business day, or keep the date), the
   account the bill is paid from, an optional credit limit, a colour (Blue, Teal, Raspberry, Amber, Violet,
   Graphite) and two alert switches (payment reminder, shortfall warning).
+  - **Credit limit alert:** with a limit set, the card can alert at a percentage of it (10–95% in steps of 5,
+    or off). What counts is everything owed on the card, billed or not. Crossing it sends one notification
+    (again only after it drops back below), warns in Quick Add, and shows on Summary, Accounts and the card.
   - Accounts shows the closed statement due ("¥42,800 · Due Dec 2") and "Next bill so far ¥9,860".
   - Starting values (card setup, also for a card nothing has been logged on yet): the unpaid statement
     goes on the closed bill; "spent since" the last closing day goes on the bill that's building, as an
@@ -107,7 +110,7 @@ These decisions were agreed before any code was written. Update this file when a
 
 ## Entry flow (Quick Add)
 
-- The + beside the tab bar opens Quick Add with the keypad live: amount → category → **Save**. Holding +
+- The + in the navigation bar of Summary, Activity and Budgets opens Quick Add with the keypad live: amount → category → **Save**. Holding +
   offers Expense, Income, Transfer and the last three different expenses to log again.
 - Category and account are pre-picked from history (`Suggestions`: time of day, weekday or weekend,
   recency; the account last used with that category), unless "Suggest category & account" is off. The
@@ -129,17 +132,19 @@ These decisions were agreed before any code was written. Update this file when a
 ## Haptics
 
 Used often but never on plain navigation, scrolling or opening a sheet. iOS's System Haptics switch turns
-them all off; there's no separate in-app switch. Generators are kept warm (`Haptics` in `Components.swift`).
+them all off; Settings › Keypad haptics silences only the keypad. Every tap is a full-strength impact (the
+soft, low-intensity ones were too faint to feel). Generators are kept warm (`Haptics` in `Components.swift`;
+`.sensoryFeedback(.firmSelection, …)` in views).
 
 | Moment | Feel |
 | --- | --- |
-| Number-pad key (unless Settings › Keypad haptics is off) | Very light soft tick |
-| Key that does nothing (backspace on ¥0, digit limit) | Short rigid bump |
-| Type, split, refund, account, category or date changed; month arrows; filters; toggles; Undo | Selection tick |
+| Number-pad key (unless Settings › Keypad haptics is off) | Firm medium tap |
+| Key that does nothing (backspace on ¥0, digit limit) | Heavy thud |
+| Type, split, refund, account, category or date changed; month arrows; filters; toggles; Undo | Rigid tap |
 | Entry saved; settle up; mark repaid; payoff confirmed or recorded; balance adjusted; backup restored | Success |
 | Entry saved but its category is now over budget (my share, entry's month) | Warning |
 | Entry deleted | Warning |
-| Dropping a reordered account, category or Home section | Medium tap |
+| Dropping a reordered account or category | Heavy tap |
 
 ## Data and privacy
 
@@ -177,8 +182,10 @@ The spec is the Claude Design canvas "Kakeibo"; tokens are recorded in CLAUDE.md
   track or covered; red over budget; orange a shortfall, at risk or spent more; blue spent less.
 - Categories are rounded squares, accounts circles, credit cards small cards in their own colour; glyphs
   are SF Symbols matched on the category name. Unknown categories keep their emoji.
-- Tabs: Summary, Activity, Budgets, Accounts in a floating glass bar, with the indigo + beside it. Each tab
-  keeps its navigation stack and the bar shows on pushed screens.
+- Tabs: Summary, Activity, Budgets, Accounts in the system tab bar (Liquid Glass on iOS 26, shrinking while
+  scrolling down). The custom floating bar with + beside it was dropped: content could end up behind it at the
+  bottom of a page, and it lacked the system's glass selection. + sits in the navigation bar instead (tap for
+  an expense; hold for income, a transfer or a recent entry).
 - **Summary**: a bill that won't be covered (with Transfer and View bill), this month's budget with what's
   left, the daily allowance for the days after today, today's pace tick, the status and a like-for-like
   comparison with the same days last month; Needs attention; Upcoming card bills; Recent. The partner

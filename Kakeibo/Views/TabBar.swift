@@ -24,89 +24,66 @@ enum AppTab: String, CaseIterable, Identifiable {
     }
 }
 
-/// The floating bar: four tabs in a glass capsule and the indigo + beside it, in thumb reach on every
-/// screen. Tap + for a new expense; hold it for income, a transfer or a recent entry.
-struct KakeiboTabBar: View {
-    @Binding var selection: AppTab
-    /// Recent entries offered when + is held, newest first.
+/// What the + button does, handed down from RootView: open Quick Add with a draft, and the recent
+/// expenses offered when + is held.
+struct QuickAddAction {
+    var start: (EntryDraft) -> Void = { _ in }
     var recent: [Entry] = []
-    var recentTitle: (Entry) -> String = { _ in "" }
-    var onAdd: (EntryKind) -> Void
-    var onRepeat: (Entry) -> Void = { _ in }
+    var title: (Entry) -> String = { _ in "" }
+}
+
+private struct QuickAddKey: EnvironmentKey {
+    static let defaultValue = QuickAddAction()
+}
+
+extension EnvironmentValues {
+    var quickAdd: QuickAddAction {
+        get { self[QuickAddKey.self] }
+        set { self[QuickAddKey.self] = newValue }
+    }
+}
+
+/// The + in a tab's navigation bar. Tap for a new expense; hold for income, a transfer or a recent entry.
+/// It lives in the navigation bar rather than on the tab bar, so the tab bar stays the system one.
+struct AddEntryButton: View {
+    @Environment(\.quickAdd) private var quickAdd
 
     var body: some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 0) {
-                ForEach(AppTab.allCases) { tab in
-                    Button {
-                        if selection != tab { Haptics.selection() }
-                        selection = tab
-                    } label: {
-                        item(tab)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(tab.title)
-                    .accessibilityAddTraits(selection == tab ? [.isSelected] : [])
-                }
-            }
-            .padding(4)
-            .frame(height: Metrics.tabBarHeight)
-            .modifier(GlassBackground(shape: Capsule()))
-            .shadow(color: .black.opacity(0.35), radius: 17, y: 10)
-
-            addButton
-        }
-        .padding(.horizontal, Metrics.gutter)
-        .padding(.bottom, 2)
-    }
-
-    private func item(_ tab: AppTab) -> some View {
-        let selected = selection == tab
-        return VStack(spacing: 2) {
-            Image(systemName: tab.symbol)
-                .font(.system(size: 19, weight: .medium))
-                .frame(height: 24)
-            Text(tab.title)
-                .font(.kTabLabel)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-        }
-        .foregroundStyle(selected ? Palette.accentTint : Palette.textPrimary)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Capsule().fill(selected ? Palette.tabSelection : Color.clear))
-        .contentShape(Capsule())
-    }
-
-    private var addButton: some View {
         Menu {
             Section {
-                Button { onAdd(.expense) } label: { Label("Expense", systemImage: "minus.circle") }
-                Button { onAdd(.income) } label: { Label("Income", systemImage: "plus.circle") }
-                Button { onAdd(.transfer) } label: { Label("Transfer", systemImage: "arrow.left.arrow.right") }
+                Button { quickAdd.start(EntryDraft(kind: .expense)) } label: { Label("Expense", systemImage: "minus.circle") }
+                Button { quickAdd.start(EntryDraft(kind: .income)) } label: { Label("Income", systemImage: "plus.circle") }
+                Button { quickAdd.start(EntryDraft(kind: .transfer)) } label: { Label("Transfer", systemImage: "arrow.left.arrow.right") }
             }
-            if !recent.isEmpty {
+            if !quickAdd.recent.isEmpty {
                 Section("Log again") {
-                    ForEach(recent) { entry in
-                        Button(recentTitle(entry)) { onRepeat(entry) }
+                    ForEach(quickAdd.recent) { entry in
+                        Button(quickAdd.title(entry)) {
+                            quickAdd.start(EntryDraft(kind: .expense, amount: entry.amount, accountID: entry.accountID,
+                                                      categoryID: entry.categoryID, note: entry.note, merchant: entry.merchant))
+                        }
                     }
                 }
             }
         } label: {
             Image(systemName: "plus")
-                .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: Metrics.tabBarHeight, height: Metrics.tabBarHeight)
-                .background(Circle().fill(Palette.accentFill))
-                .overlay(Circle().strokeBorder(Color.white.opacity(0.25), lineWidth: 0.5))
-                .shadow(color: .black.opacity(0.35), radius: 15, y: 10)
-                .contentShape(Circle())
+                .fontWeight(.semibold)
         } primaryAction: {
-            onAdd(.expense)
+            quickAdd.start(EntryDraft(kind: .expense))
         }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
         .accessibilityLabel("Add transaction")
         .accessibilityHint("Hold for income, a transfer or a recent entry")
+    }
+}
+
+/// On iOS 26 the tab bar shrinks while scrolling down, as the canvas asks.
+struct MinimizeTabBarOnScroll: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.tabBarMinimizeBehavior(.onScrollDown)
+        } else {
+            content
+        }
     }
 }

@@ -2,9 +2,14 @@ import LocalAuthentication
 import SwiftData
 import SwiftUI
 import UIKit
+import UserNotifications
 
 @main
 struct KakeiboApp: App {
+    init() {
+        UNUserNotificationCenter.current().delegate = NotificationPresenter.shared
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()
@@ -25,7 +30,6 @@ struct RootView: View {
     @Query(sort: \BudgetCategory.sortOrder) private var categories: [BudgetCategory]
     @State private var showSetup = false
     @State private var tab: AppTab = .summary
-    @State private var keyboardShown = false
     @AppStorage(SettingsKey.faceIDLock) private var faceIDLock = false
     @AppStorage(SettingsKey.hideInSwitcher) private var hideInSwitcher = true
     @State private var locked = UserDefaults.standard.bool(forKey: SettingsKey.faceIDLock)
@@ -66,34 +70,19 @@ struct RootView: View {
         }
     }
 
-    /// Every tab stays alive (keeping its navigation stack) and the floating bar sits on top, so it also
-    /// shows on pushed screens as in the canvas.
+    /// The system tab bar (Liquid Glass on iOS 26). Each tab has its own navigation stack, with + in its
+    /// navigation bar.
     private var tabs: some View {
-        ZStack {
+        TabView(selection: $tab) {
             ForEach(AppTab.allCases) { item in
-                tabContent(item)
-                    .opacity(tab == item ? 1 : 0)
-                    .allowsHitTesting(tab == item)
-                    .accessibilityHidden(tab != item)
+                Tab(item.title, systemImage: item.symbol, value: item) {
+                    tabContent(item)
+                }
             }
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if !keyboardShown {
-                KakeiboTabBar(selection: $tab, recent: repeatable, recentTitle: repeatTitle, onAdd: { kind in
-                    addDraft = EntryDraft(kind: kind)
-                }, onRepeat: { entry in
-                    addDraft = EntryDraft(kind: .expense, amount: entry.amount, accountID: entry.accountID,
-                                          categoryID: entry.categoryID, note: entry.note, merchant: entry.merchant)
-                })
-            }
-        }
+        .modifier(MinimizeTabBarOnScroll())
+        .environment(\.quickAdd, QuickAddAction(start: { addDraft = $0 }, recent: repeatable, title: repeatTitle))
         .tint(Palette.accentTint)
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
-            keyboardShown = true
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
-            keyboardShown = false
-        }
         .sheet(item: $addDraft) { draft in
             EntryEditorView(mode: .new, draft: draft)
         }

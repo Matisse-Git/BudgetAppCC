@@ -46,8 +46,11 @@ struct BudgetsView: View {
                         CategoriesView()
                     }
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    AddEntryButton()
+                }
             }
-            .sensoryFeedback(.selection, trigger: page)
+            .sensoryFeedback(.firmSelection, trigger: page)
         }
     }
 }
@@ -273,6 +276,7 @@ struct SplitBar: View {
                             .offset(x: geo.size.width * tick - 1)
                     }
                 }
+                .frame(width: geo.size.width, height: 14)
             }
             .frame(height: 14)
             if let tick {
@@ -281,9 +285,10 @@ struct SplitBar: View {
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Palette.textSecondary)
                         .fixedSize()
-                        .position(x: min(max(geo.size.width * tick, 16), max(geo.size.width - 16, 16)), y: 11)
+                        .position(x: min(max(geo.size.width * tick, 16), max(geo.size.width - 16, 16)), y: geo.size.height / 2)
                 }
-                .frame(height: 17)
+                .frame(height: 13)
+                .padding(.top, 4)
             }
         }
         .accessibilityElement(children: .ignore)

@@ -181,7 +181,6 @@ enum Metrics {
     static let keyHeight: CGFloat = 58
     static let keyRadius: CGFloat = 16
     static let keySpacing: CGFloat = 8
-    static let tabBarHeight: CGFloat = 62
 }
 
 /// SF Pro with Dynamic Type for text; fixed sizes for the big yen figures, which shrink to fit instead.

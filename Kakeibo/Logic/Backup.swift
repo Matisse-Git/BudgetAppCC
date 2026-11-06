@@ -38,6 +38,7 @@ enum Backup {
         var paymentReminder: Bool?
         var shortfallWarning: Bool?
         var colorKey: String?
+        var limitAlertPercent: Int?
 
         init(_ a: Account) {
             id = a.id; name = a.name; emoji = a.emoji; kindRaw = a.kindRaw; openingBalance = a.openingBalance
@@ -47,6 +48,7 @@ enum Backup {
             walletCardName = a.walletCardName; shareScope = a.shareScope
             paymentMonthOffset = a.paymentMonthOffset; holidayShiftRaw = a.holidayShiftRaw; creditLimit = a.creditLimit
             paymentReminder = a.paymentReminder; shortfallWarning = a.shortfallWarning; colorKey = a.colorKey
+            limitAlertPercent = a.limitAlertPercent
         }
 
         func make() -> Account {
@@ -61,6 +63,7 @@ enum Backup {
             a.paymentReminder = paymentReminder ?? true
             a.shortfallWarning = shortfallWarning ?? true
             a.colorKey = colorKey ?? ""
+            a.limitAlertPercent = limitAlertPercent ?? 0
             return a
         }
     }

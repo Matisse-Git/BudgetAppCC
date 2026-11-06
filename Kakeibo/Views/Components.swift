@@ -3,12 +3,13 @@ import UIKit
 
 /// The app's vocabulary of vibrations. Generators are kept alive and re-prepared after each use,
 /// so the Taptic Engine is warm and fires without delay. iOS's System Haptics switch turns them all off.
+/// Every tap is a full-strength impact: the soft, low-intensity ones were too faint to feel.
 @MainActor
 enum Haptics {
-    private static let keyGenerator = UIImpactFeedbackGenerator(style: .soft)
-    private static let bumpGenerator = UIImpactFeedbackGenerator(style: .rigid)
-    private static let liftGenerator = UIImpactFeedbackGenerator(style: .medium)
-    private static let selectionGenerator = UISelectionFeedbackGenerator()
+    private static let keyGenerator = UIImpactFeedbackGenerator(style: .medium)
+    private static let bumpGenerator = UIImpactFeedbackGenerator(style: .heavy)
+    private static let liftGenerator = UIImpactFeedbackGenerator(style: .heavy)
+    private static let selectionGenerator = UIImpactFeedbackGenerator(style: .rigid)
     private static let notificationGenerator = UINotificationFeedbackGenerator()
 
     /// Warm up everything, e.g. when the add screen appears.
@@ -19,27 +20,28 @@ enum Haptics {
         notificationGenerator.prepare()
     }
 
-    /// A number-pad key: a very light, soft tick.
+    /// A number-pad key: a firm, clean tap.
     static func key() {
-        keyGenerator.impactOccurred(intensity: 0.55)
+        keyGenerator.impactOccurred(intensity: 1.0)
         keyGenerator.prepare()
     }
 
-    /// A key that did nothing (backspace on ¥0, digit limit reached).
+    /// A key that did nothing (backspace on ¥0, digit limit reached): a heavier thud.
     static func blocked() {
-        bumpGenerator.impactOccurred(intensity: 0.6)
+        bumpGenerator.impactOccurred(intensity: 1.0)
         bumpGenerator.prepare()
     }
 
     /// A choice changed: a tab-like picker, a menu option, a toggle, a month.
     static func selection() {
-        selectionGenerator.selectionChanged()
+        selectionGenerator.impactOccurred(intensity: 1.0)
         selectionGenerator.prepare()
     }
 
     /// Picking up or dropping a row while reordering.
     static func lift() {
-        liftGenerator.impactOccurred(intensity: 0.7)
+        liftGenerator.impactOccurred(intensity: 1.0)
+        liftGenerator.prepare()
     }
 
     static func success() {
@@ -47,11 +49,17 @@ enum Haptics {
         notificationGenerator.prepare()
     }
 
-    /// Saved, but worth noticing (over budget) or destructive (delete).
+    /// Saved, but worth noticing (over budget, near a card limit) or destructive (delete).
     static func warning() {
         notificationGenerator.notificationOccurred(.warning)
         notificationGenerator.prepare()
     }
+}
+
+extension SensoryFeedback {
+    /// What `.sensoryFeedback` uses for a changed choice: a full-strength rigid tap instead of the faint
+    /// system selection tick, matching `Haptics.selection()`.
+    static let firmSelection = SensoryFeedback.impact(flexibility: .rigid, intensity: 1.0)
 }
 
 /// Share sheet for exported files.
@@ -80,11 +88,52 @@ struct AmountField: View {
         HStack {
             Text(title)
             Spacer()
-            TextField("¥0", value: $value, format: .number)
-                .keyboardType(allowNegative ? .numbersAndPunctuation : .numberPad)
-                .multilineTextAlignment(.trailing)
+            YenField(placeholder: "¥0", value: $value, allowNegative: allowNegative)
                 .frame(maxWidth: 160)
         }
+    }
+}
+
+/// A yen amount typed on the number pad. The value updates on every keystroke: a
+/// `TextField(value:format:)` only commits on Return, which the number pad doesn't have, so whatever was
+/// typed was lost when you tapped Save.
+struct YenField: View {
+    let placeholder: String
+    @Binding var value: Int
+    var allowNegative = false
+    @State private var text = ""
+
+    var body: some View {
+        TextField(placeholder, text: $text)
+            .keyboardType(allowNegative ? .numbersAndPunctuation : .numberPad)
+            .multilineTextAlignment(.trailing)
+            .monospacedDigit()
+            .onAppear { text = YenField.display(value) }
+            .onChange(of: text) { _, typed in
+                let parsed = YenField.parse(typed, allowNegative: allowNegative)
+                if parsed != value { value = parsed }
+                let shown = YenField.display(parsed)
+                // Keep a lone "-" while a negative number is being typed.
+                if shown != typed && !(allowNegative && typed == "-") { text = shown }
+            }
+            .onChange(of: value) { _, newValue in
+                if YenField.parse(text, allowNegative: allowNegative) != newValue { text = YenField.display(newValue) }
+            }
+    }
+
+    /// "12,000" for 12000, "−500" for -500, empty for 0 so the placeholder shows.
+    nonisolated static func display(_ value: Int) -> String {
+        guard value != 0 else { return "" }
+        return value < 0 ? "-" + Yen.digits(value) : Yen.digits(value)
+    }
+
+    /// Digits typed so far (full-width too), capped at ten digits.
+    nonisolated static func parse(_ text: String, allowNegative: Bool) -> Int {
+        let halfWidth = text.applyingTransform(.fullwidthToHalfwidth, reverse: false) ?? text
+        let digits = String(halfWidth.filter { $0.isASCII && $0.isNumber }.prefix(10))
+        let magnitude = Int(digits) ?? 0
+        let negative = allowNegative && (halfWidth.contains("-") || halfWidth.contains("−"))
+        return negative ? -magnitude : magnitude
     }
 }
 

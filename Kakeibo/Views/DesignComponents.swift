@@ -351,6 +351,9 @@ struct BudgetBar: View {
                         .offset(x: width * min(max(pace, 0), 1) - 1)
                 }
             }
+            // Pinned to the bar's own height so the taller tick overhangs 3 pt above and below. Left to
+            // size itself, the stack grew to the tick's height and GeometryReader drew the bar 3 pt low.
+            .frame(width: width, height: height)
         }
         .frame(height: height)
         .accessibilityHidden(true)

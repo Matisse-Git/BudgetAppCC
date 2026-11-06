@@ -163,6 +163,7 @@ struct WidgetBudgetBar: View {
                         .offset(x: geo.size.width * min(max(pace, 0), 1) - 1)
                 }
             }
+            .frame(width: geo.size.width, height: 6)
         }
         .frame(height: 6)
     }

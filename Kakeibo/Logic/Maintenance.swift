@@ -82,6 +82,7 @@ enum Maintenance {
         writeWidgetSnapshot(ledger, now: now)
         BillNotifications.reschedule(ledger: ledger, now: now)
         BillNotifications.announcePayments(paid, ledger: ledger, now: now)
+        BillNotifications.checkLimits(ledger: ledger, now: now)
         BillNotifications.scheduleEveningReminder()
     }
 
@@ -224,6 +225,33 @@ enum BillNotifications {
         }
     }
 
+    private static let limitAlertedKey = "limitAlertedCards"
+
+    /// "Olive at 46% of its limit": once when a card reaches its alert percentage, and again only after it
+    /// has dropped back below (a payoff) and climbs past it once more.
+    @MainActor
+    static func checkLimits(ledger: Ledger, now: Date = Date(), defaults: UserDefaults = .standard) {
+        var alerted = Set(defaults.stringArray(forKey: limitAlertedKey) ?? [])
+        let center = UNUserNotificationCenter.current()
+        for card in ledger.accounts where card.kind == .credit && !card.isArchived {
+            let key = card.id.uuidString
+            guard let usage = card.limitUsage(ledger: ledger, now: now), usage.isPastAlert else {
+                alerted.remove(key)
+                continue
+            }
+            guard !alerted.contains(key) else { continue }
+            alerted.insert(key)
+            let content = UNMutableNotificationContent()
+            content.title = "\(card.name) at \(usage.percent)% of its limit"
+            content.body = "\(Yen.format(usage.owed)) of \(Yen.format(usage.limit)) used · \(Yen.format(max(usage.available, 0))) available."
+            content.sound = .default
+            let request = UNNotificationRequest(identifier: "limit-\(key)-\(Int(now.timeIntervalSince1970))", content: content,
+                                                trigger: UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false))
+            center.add(request, withCompletionHandler: nil)
+        }
+        defaults.set(Array(alerted), forKey: limitAlertedKey)
+    }
+
     /// The daily "Anything else to log?" nudge, if it's on.
     static func scheduleEveningReminder(defaults: UserDefaults = .standard) {
         let center = UNUserNotificationCenter.current()
@@ -235,5 +263,16 @@ enum BillNotifications {
         content.body = "Add today's spending in a few seconds."
         let trigger = UNCalendarNotificationTrigger(dateMatching: DateComponents(hour: minutes / 60, minute: minutes % 60), repeats: true)
         center.add(UNNotificationRequest(identifier: eveningID, content: content, trigger: trigger), withCompletionHandler: nil)
+    }
+}
+
+/// Shows Kakeibo's notifications (limit alerts, bills) as banners even while the app is open; iOS hides
+/// them by default when the app is in front.
+final class NotificationPresenter: NSObject, UNUserNotificationCenterDelegate {
+    static let shared = NotificationPresenter()
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .list, .sound])
     }
 }

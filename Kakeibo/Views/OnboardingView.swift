@@ -271,13 +271,10 @@ struct SetupBudgetsView: View {
             Section {
                 ForEach(categories.filter { $0.kind == .expense && !$0.isArchived }) { category in
                     LabeledContent {
-                        TextField("No budget", value: Binding(
+                        YenField(placeholder: "No budget", value: Binding(
                             get: { category.monthlyBudget },
                             set: { category.monthlyBudget = max($0, 0) }
-                        ), format: .number)
-                        .keyboardType(.numberPad)
-                        .multilineTextAlignment(.trailing)
-                        .monospacedDigit()
+                        ))
                     } label: {
                         HStack(spacing: 10) {
                             CategoryIcon(category: category, size: 28)

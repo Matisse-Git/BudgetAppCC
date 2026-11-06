@@ -138,10 +138,50 @@ enum CardHistory {
     }
 }
 
+/// How much of a card's credit limit is in use: everything owed, billed or not.
+struct LimitUsage: Equatable {
+    let owed: Int
+    let limit: Int
+    /// 0 when the alert is off.
+    let alertPercent: Int
+
+    var available: Int { limit - owed }
+    var fraction: Double { limit > 0 ? Double(owed) / Double(limit) : 0 }
+    /// Rounded down, so 44.9% doesn't show as 45% before the alert fires.
+    var percent: Int { limit > 0 ? owed * 100 / limit : 0 }
+    var alertFraction: Double? { alertPercent > 0 ? Double(alertPercent) / 100 : nil }
+    /// Owed amount at which the alert fires.
+    var alertAmount: Int? { alertPercent > 0 ? (limit * alertPercent + 99) / 100 : nil }
+    var isPastAlert: Bool { alertAmount.map { owed >= $0 } ?? false }
+}
+
 extension Account {
+    /// Limit usage for a credit card with a limit, nil otherwise.
+    func limitUsage(ledger: Ledger, now: Date = Date()) -> LimitUsage? {
+        guard kind == .credit, creditLimit > 0 else { return nil }
+        let owed = max(-ledger.balance(of: self, before: now), 0)
+        return LimitUsage(owed: owed, limit: creditLimit, alertPercent: min(max(limitAlertPercent, 0), 100))
+    }
+
     /// What a card has left to spend, nil without a limit.
     func available(ledger: Ledger) -> Int? {
-        guard kind == .credit, creditLimit > 0 else { return nil }
-        return creditLimit + ledger.balance(of: self)
+        limitUsage(ledger: ledger)?.available
+    }
+}
+
+enum CreditLimits {
+    /// Active cards whose owed amount has reached their alert percentage, most used first.
+    static func pastAlert(ledger: Ledger, now: Date = Date()) -> [(card: Account, usage: LimitUsage)] {
+        ledger.accounts
+            .filter { $0.kind == .credit && !$0.isArchived }
+            .compactMap { card in card.limitUsage(ledger: ledger, now: now).map { (card: card, usage: $0) } }
+            .filter { $0.usage.isPastAlert }
+            .sorted { $0.usage.fraction > $1.usage.fraction }
+    }
+
+    /// True when adding `amount` to what's owed takes the card from below its alert to at or past it.
+    static func crosses(_ usage: LimitUsage, adding amount: Int) -> Bool {
+        guard let threshold = usage.alertAmount, amount > 0 else { return false }
+        return usage.owed >= threshold && usage.owed - amount < threshold
     }
 }

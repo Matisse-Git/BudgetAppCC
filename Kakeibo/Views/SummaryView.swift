@@ -53,6 +53,9 @@ struct SummaryView: View {
                     }
                     .accessibilityLabel("Settings")
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    AddEntryButton()
+                }
             }
             .sheet(item: $draft) { draft in
                 EntryEditorView(mode: .new, draft: draft)
@@ -148,10 +151,28 @@ struct SummaryView: View {
     private func toDoSection(_ ledger: Ledger) -> some View {
         let owed = ledger.partnerOwed
         let review = entries.filter { ($0.kind == .payoff && !$0.isConfirmed) || $0.needsReview }.count
-        if owed != 0 || review > 0 {
+        let limits = CreditLimits.pastAlert(ledger: ledger)
+        if owed != 0 || review > 0 || !limits.isEmpty {
             SectionTitle("To do")
                 .padding(.top, Metrics.sectionSpacing)
             CardList {
+                ForEach(Array(limits.enumerated()), id: \.element.card.id) { index, item in
+                    if index > 0 { ListDivider() }
+                    NavigationLink {
+                        AccountDetailView(account: item.card)
+                    } label: {
+                        KRow("\(item.card.name) at \(item.usage.percent)% of its limit",
+                             subtitle: "\(Yen.format(max(item.usage.available, 0))) of \(Yen.format(item.usage.limit)) available",
+                             chevron: true) {
+                            AccountIcon(account: item.card)
+                        } trailing: {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(Palette.warning)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+                if !limits.isEmpty && (owed != 0 || review > 0) { ListDivider() }
                 if owed != 0 {
                     NavigationLink {
                         PartnerView()
@@ -393,14 +414,16 @@ struct PaceBar: View {
         VStack(spacing: 0) {
             BudgetBar(fraction: fraction, pace: pace, tint: tint, height: height)
             if let pace {
+                // Centred under the tick, starting below its 3 pt overhang.
                 GeometryReader { geo in
                     Text("Today")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Palette.textSecondary)
                         .fixedSize()
-                        .position(x: min(max(geo.size.width * pace, 16), max(geo.size.width - 16, 16)), y: 10)
+                        .position(x: min(max(geo.size.width * pace, 16), max(geo.size.width - 16, 16)), y: geo.size.height / 2)
                 }
-                .frame(height: 16)
+                .frame(height: 13)
+                .padding(.top, 4)
             }
         }
         .accessibilityHidden(true)

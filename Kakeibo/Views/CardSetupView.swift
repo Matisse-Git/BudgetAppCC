@@ -19,6 +19,7 @@ struct CardSetupView: View {
     @State private var shift: HolidayShift = .nextBusinessDay
     @State private var payFrom: UUID?
     @State private var limit = 0
+    @State private var limitAlert = 0
     @State private var autoPayoff = true
     @State private var reminder = true
     @State private var warn = true
@@ -144,29 +145,36 @@ struct CardSetupView: View {
                     }
                     Toggle("Record each payment automatically", isOn: $autoPayoff)
                         .disabled(payFrom == nil)
+                }
+                .listRowBackground(Palette.sheetRow)
+
+                Section {
                     LabeledContent("Credit limit") {
-                        TextField("Optional", value: $limit, format: .number)
-                            .keyboardType(.numberPad)
-                            .multilineTextAlignment(.trailing)
-                            .monospacedDigit()
+                        YenField(placeholder: "Not set", value: $limit)
                     }
+                    Picker("Alert at", selection: $limitAlert) {
+                        Text("Off").tag(0)
+                        ForEach(Array(stride(from: 10, through: 95, by: 5)), id: \.self) { percent in
+                            Text("\(percent)%").tag(percent)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .disabled(limit <= 0)
+                } header: {
+                    Text("Credit limit")
+                } footer: {
+                    Text(limitFooter)
                 }
                 .listRowBackground(Palette.sheetRow)
 
                 if setsOpeningAmounts {
                     Section {
                         LabeledContent("Unpaid statement") {
-                            TextField("¥0", value: $unpaid, format: .number)
-                                .keyboardType(.numberPad)
-                                .multilineTextAlignment(.trailing)
-                                .monospacedDigit()
+                            YenField(placeholder: "¥0", value: $unpaid)
                         }
                         LabeledContent("Due", value: BillingText.day(closed.paymentDate))
                         LabeledContent("Spent since \(open.start.formatted(.dateTime.month(.abbreviated).day()))") {
-                            TextField("¥0", value: $spentSince, format: .number)
-                                .keyboardType(.numberPad)
-                                .multilineTextAlignment(.trailing)
-                                .monospacedDigit()
+                            YenField(placeholder: "¥0", value: $spentSince)
                         }
                     } header: {
                         Text("Where it stands today")
@@ -228,11 +236,18 @@ struct CardSetupView: View {
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
-            .sensoryFeedback(.selection, trigger: shift)
-            .sensoryFeedback(.selection, trigger: closingDay)
+            .sensoryFeedback(.firmSelection, trigger: shift)
+            .sensoryFeedback(.firmSelection, trigger: closingDay)
             .onAppear(perform: load)
         }
         .presentationBackground(Palette.sheet)
+    }
+
+    private var limitFooter: String {
+        guard limit > 0 else { return "Add the card's limit to see what's available and get an alert as you near it." }
+        guard limitAlert > 0 else { return "No alert. Set one to hear when what you owe on this card reaches part of the limit." }
+        let amount = (limit * limitAlert + 99) / 100
+        return "You'll get an alert when what you owe on this card, billed or not yet billed, reaches \(Yen.format(amount)) (\(limitAlert)% of \(Yen.format(limit)))."
     }
 
     private func offsetLabel(_ offset: Int) -> String {
@@ -266,6 +281,7 @@ struct CardSetupView: View {
         shift = card.holidayShift
         payFrom = card.payFromAccountID
         limit = card.creditLimit
+        limitAlert = card.limitAlertPercent
         autoPayoff = card.autoPayoff
         reminder = card.paymentReminder
         warn = card.shortfallWarning
@@ -300,6 +316,7 @@ struct CardSetupView: View {
         target.payFromAccountID = payFrom
         target.autoPayoff = autoPayoff
         target.creditLimit = max(limit, 0)
+        target.limitAlertPercent = limit > 0 ? limitAlert : 0
         target.paymentReminder = reminder
         target.shortfallWarning = warn
         if card != nil { target.isArchived = archived }

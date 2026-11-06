@@ -144,13 +144,13 @@ struct EntryEditorView: View {
         }
         .onAppear(perform: load)
         .onChange(of: kind) { _, newKind in kindChanged(to: newKind) }
-        .sensoryFeedback(.selection, trigger: kind) { _, _ in ready }
-        .sensoryFeedback(.selection, trigger: split) { _, _ in ready }
-        .sensoryFeedback(.selection, trigger: isRefund) { _, _ in ready }
-        .sensoryFeedback(.selection, trigger: accountID) { _, _ in ready }
-        .sensoryFeedback(.selection, trigger: toAccountID) { _, _ in ready }
-        .sensoryFeedback(.selection, trigger: categoryID) { _, _ in ready }
-        .sensoryFeedback(.selection, trigger: Calendar.kakeibo.startOfDay(for: date)) { _, _ in ready }
+        .sensoryFeedback(.firmSelection, trigger: kind) { _, _ in ready }
+        .sensoryFeedback(.firmSelection, trigger: split) { _, _ in ready }
+        .sensoryFeedback(.firmSelection, trigger: isRefund) { _, _ in ready }
+        .sensoryFeedback(.firmSelection, trigger: accountID) { _, _ in ready }
+        .sensoryFeedback(.firmSelection, trigger: toAccountID) { _, _ in ready }
+        .sensoryFeedback(.firmSelection, trigger: categoryID) { _, _ in ready }
+        .sensoryFeedback(.firmSelection, trigger: Calendar.kakeibo.startOfDay(for: date)) { _, _ in ready }
     }
 
     // MARK: Header and amount
@@ -326,10 +326,7 @@ struct EntryEditorView: View {
             Text("\(partnerName)'s share")
                 .foregroundStyle(Palette.textPrimary)
             Spacer()
-            TextField("¥0", value: $customShare, format: .number)
-                .keyboardType(.numberPad)
-                .multilineTextAlignment(.trailing)
-                .monospacedDigit()
+            YenField(placeholder: "¥0", value: $customShare)
                 .frame(maxWidth: 140)
         }
         .font(.subheadline)
@@ -576,7 +573,8 @@ struct EntryEditorView: View {
         entry.needsReview = false
         if isNew { context.insert(entry) }
         context.saveAndRefresh()
-        if endsOverBudget(entry) {
+        let limitNote = limitCrossing(entry)
+        if endsOverBudget(entry) || limitNote != nil {
             Haptics.warning()
         } else {
             Haptics.success()
@@ -586,7 +584,8 @@ struct EntryEditorView: View {
             dismiss()
             return
         }
-        showToast(SavedToast(entry: entry, message: toastMessage(for: entry), state: before))
+        let message = limitNote.map { "Saved \(Yen.format(entry.amount)) · \($0)" } ?? toastMessage(for: entry)
+        showToast(SavedToast(entry: entry, message: message, state: before))
         amount = 0
         note = ""
         merchant = ""
@@ -633,6 +632,18 @@ struct EntryEditorView: View {
         isRefund = s.isRefund
         withAnimation(.easeOut) { toast = nil }
         Haptics.selection()
+    }
+
+    /// "Olive now at 46% of its limit" when this purchase took a card past its limit alert.
+    private func limitCrossing(_ entry: Entry) -> String? {
+        guard entry.kind == .expense, !entry.isRefund,
+              let card = accounts.first(where: { $0.id == entry.accountID }), card.kind == .credit,
+              card.creditLimit > 0, card.limitAlertPercent > 0 else { return nil }
+        let all = (try? context.fetch(FetchDescriptor<Entry>())) ?? []
+        let ledger = Ledger(accounts: accounts, categories: categories, entries: all)
+        let now = max(Date(), entry.date.addingTimeInterval(1))
+        guard let usage = card.limitUsage(ledger: ledger, now: now), CreditLimits.crosses(usage, adding: entry.amount) else { return nil }
+        return "\(card.name) now at \(usage.percent)% of its limit"
     }
 
     /// A spending entry that leaves its category over budget gets a warning buzz instead of success.
@@ -858,7 +869,7 @@ struct EntryDetailForm: View {
                     Section {
                         Toggle("Confirmed", isOn: $entry.isConfirmed)
                             .sensoryFeedback(trigger: entry.isConfirmed) { _, confirmed in
-                                confirmed ? SensoryFeedback.success : SensoryFeedback.selection
+                                confirmed ? SensoryFeedback.success : SensoryFeedback.firmSelection
                             }
                     } footer: {
                         Text("Tick this once you've seen the real debit. Unconfirmed payoffs still move the money.")

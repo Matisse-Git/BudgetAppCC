@@ -117,6 +117,8 @@ final class Account {
     var holidayShiftRaw: String = HolidayShift.nextBusinessDay.rawValue
     /// Credit limit in yen. 0 means not set.
     var creditLimit: Int = 0
+    /// Alert when what's owed reaches this percentage of the limit. 0 means off.
+    var limitAlertPercent: Int = 0
     /// Remind 3 days and 1 day before each payment.
     var paymentReminder: Bool = true
     /// Warn when the paying account won't cover a bill on its due date.

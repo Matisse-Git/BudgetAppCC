@@ -239,8 +239,20 @@ struct CreditCardRow: View {
     var body: some View {
         let status = Billing.status(for: card, ledger: ledger, now: now)
         let short = reminders.first { $0.account.id == card.id }.map { $0.shortfall > 0 } ?? false
-        KRow(card.name, subtitle: "Next bill so far \(Yen.format(status.nextSoFar))", minHeight: 64, chevron: true) {
+        let usage = card.limitUsage(ledger: ledger, now: now)
+        KRow(card.name, minHeight: 64, chevron: true) {
             AccountIcon(account: card)
+        } subtitle: {
+            if let usage, usage.isPastAlert {
+                HStack(spacing: 4) {
+                    Image(systemName: "exclamationmark.triangle.fill").font(.caption2)
+                    Text("\(usage.percent)% of limit used")
+                }
+                .fontWeight(.semibold)
+                .foregroundStyle(Palette.warning)
+            } else {
+                Text("Next bill so far \(Yen.format(status.nextSoFar))")
+            }
         } trailing: {
             if status.due > 0 {
                 AmountStack(Yen.format(status.due)) {
@@ -304,7 +316,7 @@ struct ReorderAccountsView: View {
             List {
                 Section {
                     Toggle("Group by type", isOn: $groupByType)
-                        .sensoryFeedback(.selection, trigger: groupByType)
+                        .sensoryFeedback(.firmSelection, trigger: groupByType)
                 } footer: {
                     Text("Splits your other accounts into Bank, Top-up and Cash. Your order is kept either way.")
                 }
@@ -379,7 +391,7 @@ struct AccountEditView: View {
                 if kind == .topUp {
                     Section {
                         Toggle("Top-ups count as spending", isOn: $countsTopUp)
-                            .sensoryFeedback(.selection, trigger: countsTopUp)
+                            .sensoryFeedback(.firmSelection, trigger: countsTopUp)
                         if countsTopUp {
                             Picker("Category", selection: $topUpCategory) {
                                 Text("None").tag(UUID?.none)
@@ -410,7 +422,7 @@ struct AccountEditView: View {
                             }
                         }
                         Toggle("Record payoff automatically", isOn: $autoPayoff)
-                            .sensoryFeedback(.selection, trigger: autoPayoff)
+                            .sensoryFeedback(.firmSelection, trigger: autoPayoff)
                     }
                 }
                 Section {
@@ -421,7 +433,7 @@ struct AccountEditView: View {
                 if account != nil {
                     Section {
                         Toggle("Archived", isOn: $archived)
-                            .sensoryFeedback(.selection, trigger: archived)
+                            .sensoryFeedback(.firmSelection, trigger: archived)
                     } footer: {
                         Text("Archived accounts are hidden from pickers but keep their history.")
                     }
