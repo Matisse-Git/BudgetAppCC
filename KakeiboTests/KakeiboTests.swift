@@ -599,6 +599,111 @@ final class WordingTests: XCTestCase {
     }
 }
 
+final class InstallmentTests: XCTestCase {
+    private func everyday(created: Date = day(2026, 10, 1)) -> (bank: Account, card: Account) {
+        let bank = Account(name: "Main Bank", kind: .bank, openingBalance: 1_000_000)
+        let card = Account(name: "Everyday Card", kind: .credit)
+        card.closingDay = 31
+        card.paymentDay = 27
+        card.payFromAccountID = bank.id
+        card.createdAt = created
+        return (bank, card)
+    }
+
+    private func phone(on card: Account, months: Int = 24, mode: InstallmentMode = .monthly, fee: Int = -1,
+                       category: BudgetCategory? = nil) -> Entry {
+        let entry = Entry(kind: .expense, amount: 400_000, date: day(2026, 11, 17), accountID: card.id, categoryID: category?.id)
+        entry.installmentCount = months
+        entry.installmentMode = mode
+        entry.installmentFeeOverride = fee
+        return entry
+    }
+
+    func testSplitPutsTheRemainderFirst() {
+        XCTAssertEqual(Installments.split(100_000, into: 3), [33_334, 33_333, 33_333])
+        XCTAssertEqual(Installments.split(400_000, into: 24).first, 16_682)
+        XCTAssertEqual(Installments.split(400_000, into: 24).last, 16_666)
+        XCTAssertEqual(Installments.split(400_000, into: 24).reduce(0, +), 400_000)
+    }
+
+    func testFeesUseLevelPaymentsAndTwoAreFree() {
+        // Matches the usual Japanese table: 3 payments at 15% cost ¥2.51 per ¥100.
+        XCTAssertEqual(Installments.fee(principal: 100_000, months: 3, annualRate: 15), 2_510)
+        XCTAssertEqual(Installments.fee(principal: 100_000, months: 2, annualRate: 15), 0)
+        XCTAssertEqual(Installments.fee(principal: 100_000, months: 12, annualRate: 0), 0)
+    }
+
+    func testEachInstallmentLandsOnItsOwnBill() throws {
+        let (bank, card) = everyday()
+        let entry = phone(on: card)
+        let ledger = Ledger(accounts: [bank, card], entries: [entry])
+        let plan = try XCTUnwrap(ledger.plan(for: entry))
+        XCTAssertEqual(plan.slices.count, 24)
+        XCTAssertEqual(plan.slices[0].paymentDate, day(2026, 12, 28, hour: 0), "Dec 27 is a Sunday")
+        XCTAssertEqual(plan.slices[1].paymentDate, day(2027, 1, 27, hour: 0))
+
+        // Only the first installment is due on the November statement; the next bill holds the second.
+        let status = Billing.status(for: card, ledger: ledger, now: day(2026, 12, 5))
+        XCTAssertEqual(status.due, 16_682)
+        XCTAssertEqual(status.nextSoFar, 16_666)
+        // The whole remaining price counts against the limit.
+        XCTAssertEqual(status.owedNow, 400_000)
+    }
+
+    func testSpendingFollowsTheChosenMode() {
+        let (bank, card) = everyday()
+        let shopping = BudgetCategory(name: "Shopping", emoji: "", kind: .expense, sortOrder: 0)
+        let november = Ledger.monthInterval(containing: day(2026, 11, 1))
+        let december = Ledger.monthInterval(containing: day(2026, 12, 1))
+        func spent(_ mode: InstallmentMode, _ month: DateInterval) -> Int {
+            Ledger(accounts: [bank, card], categories: [shopping], entries: [phone(on: card, mode: mode, category: shopping)])
+                .spendingByCategory(in: month)[shopping.id] ?? 0
+        }
+        XCTAssertEqual(spent(.all, november), 400_000)
+        XCTAssertEqual(spent(.all, december), 0)
+        XCTAssertEqual(spent(.monthly, november), 0)
+        XCTAssertEqual(spent(.monthly, december), 16_682, "Counts in the month it's paid")
+        XCTAssertEqual(spent(.debt, november), 0)
+        XCTAssertEqual(spent(.debt, december), 0)
+    }
+
+    func testFeesAreChargedPerStatementAndCountAsCardFees() throws {
+        let (bank, card) = everyday()
+        card.installmentFeeRate = 15
+        let fees = BudgetCategory(name: Ledger.cardFeesName, emoji: "", kind: .expense, sortOrder: 9)
+        let entry = Entry(kind: .expense, amount: 100_000, date: day(2026, 11, 17), accountID: card.id)
+        entry.installmentCount = 3
+        let ledger = Ledger(accounts: [bank, card], categories: [fees], entries: [entry])
+        XCTAssertEqual(try XCTUnwrap(ledger.plan(for: entry)).totalFee, 2_510)
+        XCTAssertEqual(Billing.status(for: card, ledger: ledger, now: day(2026, 12, 5)).due, 33_334 + 838)
+        XCTAssertEqual(ledger.spendingByCategory(in: Ledger.monthInterval(containing: day(2026, 12, 1)))[fees.id], 838)
+
+        // A campaign purchase with an exact ¥0 fee pays none.
+        entry.installmentFeeOverride = 0
+        let free = Ledger(accounts: [bank, card], categories: [fees], entries: [entry])
+        XCTAssertEqual(Billing.status(for: card, ledger: free, now: day(2026, 12, 5)).due, 33_334)
+    }
+
+    func testInstallmentsBeforeTrackingCountAsPaid() {
+        let (bank, card) = everyday(created: day(2026, 12, 1))
+        let entry = Entry(kind: .expense, amount: 60_000, date: day(2026, 9, 10), accountID: card.id)
+        entry.installmentCount = 6
+        let ledger = Ledger(accounts: [bank, card], entries: [entry])
+        // Paid Oct 27 and Nov 27, before the card was added; Dec 28 is the third.
+        XCTAssertEqual(Billing.status(for: card, ledger: ledger, now: day(2026, 12, 5)).due, 10_000)
+        XCTAssertEqual(-ledger.balance(of: card, before: day(2026, 12, 5)), 40_000)
+    }
+
+    func testPayingOffTheRestMovesItToTheNextBill() {
+        let (bank, card) = everyday()
+        let entry = phone(on: card)
+        entry.installmentPaidOffAt = day(2026, 12, 5)
+        let firstPayment = Entry(kind: .payoff, amount: 16_682, date: day(2026, 12, 28, hour: 9), accountID: bank.id, toAccountID: card.id)
+        let ledger = Ledger(accounts: [bank, card], entries: [entry, firstPayment])
+        XCTAssertEqual(Billing.status(for: card, ledger: ledger, now: day(2027, 1, 5)).due, 16_666 * 23)
+    }
+}
+
 final class FeedbackLogicTests: XCTestCase {
     func testKeypadReportsKeysThatDoNothing() {
         XCTAssertEqual(KeypadView.apply("5", to: 12), 125)

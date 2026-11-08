@@ -16,6 +16,7 @@ struct TransactionDetailView: View {
     @State private var confirmDelete = false
     @State private var draft: EntryDraft?
     @State private var gone = false
+    @State private var confirmPayoff = false
 
     /// True once the entry has been deleted, here or from the editor; its fields can't be read then.
     private var isGone: Bool { gone || entry.isDeleted || entry.modelContext == nil }
@@ -44,6 +45,11 @@ struct TransactionDetailView: View {
         .sheet(item: $draft) { draft in
             EntryEditorView(mode: .new, draft: draft)
         }
+        .confirmationDialog("Pay off the rest on the next bill?", isPresented: $confirmPayoff, titleVisibility: .visible) {
+            Button("Pay Off the Rest") { payOff() }
+        } message: {
+            Text("Every installment not yet billed moves onto the bill that's open now. Fees stop at what's already been charged.")
+        }
         .confirmationDialog("Delete this transaction?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive, action: deleteEntry)
         }
@@ -58,7 +64,16 @@ struct TransactionDetailView: View {
                 header(look)
                 infoCard(look)
                     .padding(.top, 24)
-                if entry.kind == .expense, let card = look.account, card.kind == .credit {
+                if let plan = ledger.plan(for: entry) {
+                    SectionCaps(title: "Installments")
+                        .padding(.top, Metrics.sectionSpacing)
+                    InstallmentPlanCard(plan: plan, now: Date()) { confirmPayoff = true }
+                        .padding(.top, 8)
+                    SectionCaps(title: "Card bills")
+                        .padding(.top, Metrics.sectionSpacing)
+                    InstallmentTimeline(plan: plan)
+                        .padding(.top, 8)
+                } else if entry.kind == .expense, let card = look.account, card.kind == .credit {
                     SectionCaps(title: "Card bill")
                         .padding(.top, Metrics.sectionSpacing)
                     CardBillTimeline(purchaseDate: entry.date, card: card, ledger: ledger)
@@ -177,7 +192,8 @@ struct TransactionDetailView: View {
     }
 
     private func budgetCard(_ category: BudgetCategory, ledger: Ledger) -> some View {
-        let pace = BudgetPace(ledger: ledger, month: entry.date)
+        // An installment plan shows this month, when its slices count; anything else shows the purchase month.
+        let pace = BudgetPace(ledger: ledger, month: ledger.plan(for: entry) == nil ? entry.date : Date())
         let item = (pace.needsAttention + pace.onTrack).first { $0.category.id == category.id }
         let spent = item?.spent ?? 0
         let monthName = pace.interval.start.formatted(.dateTime.month(.wide))
@@ -195,7 +211,7 @@ struct TransactionDetailView: View {
             }
             BudgetBar(fraction: item?.fraction ?? 0, pace: pace.isCurrentMonth ? item?.paceFraction : nil,
                       tint: CategoryLook.of(category).tint, height: 8)
-            Text("This entry made up \(Yen.format(entry.isRefund ? -entry.amount : entry.myShare)) of \(Yen.format(spent)) spent")
+            Text("This entry made up \(Yen.format(countedThisMonth(ledger: ledger, interval: pace.interval))) of \(Yen.format(spent)) spent")
                 .font(.footnote)
                 .foregroundStyle(Palette.textSecondary)
                 .monospacedDigit()
@@ -248,6 +264,22 @@ struct TransactionDetailView: View {
                            categoryID: entry.categoryID, note: entry.note, merchant: entry.merchant)
     }
 
+    /// What this entry counts toward its category in the month shown: the whole amount, or for an
+    /// installment plan the slices paid that month.
+    private func countedThisMonth(ledger: Ledger, interval: DateInterval) -> Int {
+        guard let plan = ledger.plan(for: entry), plan.mode != .all else {
+            return entry.isRefund ? -entry.amount : entry.myShare
+        }
+        guard plan.mode == .monthly else { return 0 }
+        return plan.slices.filter { $0.paymentDate >= interval.start && $0.paymentDate < interval.end }.reduce(0) { $0 + $1.myShare }
+    }
+
+    private func payOff() {
+        entry.installmentPaidOffAt = Date()
+        context.saveAndRefresh()
+        Haptics.success()
+    }
+
     private func deleteEntry() {
         gone = true
         context.delete(entry)
@@ -292,7 +324,7 @@ struct CardBillTimeline: View {
         let cycle = Billing.cycle(containing: purchaseDate, rule: card.billingRule)
         let closed = cycle.closingBoundary <= now
         let total = closed
-            ? -ledger.balance(of: card, before: cycle.closingBoundary)
+            ? Billing.statementTotal(for: card, cycle: cycle, ledger: ledger)
             : Billing.status(for: card, ledger: ledger, now: now).nextSoFar
         let period = BillingText.period(cycle)
         VStack(alignment: .leading, spacing: 0) {

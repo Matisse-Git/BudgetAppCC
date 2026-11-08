@@ -39,6 +39,7 @@ enum Backup {
         var shortfallWarning: Bool?
         var colorKey: String?
         var limitAlertPercent: Int?
+        var installmentFeeRate: Double?
 
         init(_ a: Account) {
             id = a.id; name = a.name; emoji = a.emoji; kindRaw = a.kindRaw; openingBalance = a.openingBalance
@@ -48,7 +49,7 @@ enum Backup {
             walletCardName = a.walletCardName; shareScope = a.shareScope
             paymentMonthOffset = a.paymentMonthOffset; holidayShiftRaw = a.holidayShiftRaw; creditLimit = a.creditLimit
             paymentReminder = a.paymentReminder; shortfallWarning = a.shortfallWarning; colorKey = a.colorKey
-            limitAlertPercent = a.limitAlertPercent
+            limitAlertPercent = a.limitAlertPercent; installmentFeeRate = a.installmentFeeRate
         }
 
         func make() -> Account {
@@ -64,6 +65,7 @@ enum Backup {
             a.shortfallWarning = shortfallWarning ?? true
             a.colorKey = colorKey ?? ""
             a.limitAlertPercent = limitAlertPercent ?? 0
+            a.installmentFeeRate = installmentFeeRate ?? 0
             return a
         }
     }
@@ -108,6 +110,11 @@ enum Backup {
         var billCycleKey: String?
         var currencyCode: String
         var createdAt: Date
+        // Added with card installments; optional so older backups still restore.
+        var installmentCount: Int?
+        var installmentModeRaw: String?
+        var installmentFeeOverride: Int?
+        var installmentPaidOffAt: Date?
 
         init(_ e: Entry) {
             id = e.id; kindRaw = e.kindRaw; amount = e.amount; date = e.date; note = e.note; merchant = e.merchant
@@ -115,6 +122,8 @@ enum Backup {
             partnerShare = e.partnerShare; settlementTargetID = e.settlementTargetID; isConfirmed = e.isConfirmed
             isAutoCreated = e.isAutoCreated; needsReview = e.needsReview; billCycleKey = e.billCycleKey
             currencyCode = e.currencyCode; createdAt = e.createdAt
+            installmentCount = e.installmentCount; installmentModeRaw = e.installmentModeRaw
+            installmentFeeOverride = e.installmentFeeOverride; installmentPaidOffAt = e.installmentPaidOffAt
         }
 
         func make() -> Entry {
@@ -123,6 +132,10 @@ enum Backup {
             e.id = id; e.note = note; e.merchant = merchant; e.isRefund = isRefund; e.partnerShare = partnerShare
             e.settlementTargetID = settlementTargetID; e.isConfirmed = isConfirmed; e.isAutoCreated = isAutoCreated
             e.needsReview = needsReview; e.billCycleKey = billCycleKey; e.currencyCode = currencyCode; e.createdAt = createdAt
+            e.installmentCount = installmentCount ?? 0
+            e.installmentModeRaw = installmentModeRaw ?? InstallmentMode.monthly.rawValue
+            e.installmentFeeOverride = installmentFeeOverride ?? -1
+            e.installmentPaidOffAt = installmentPaidOffAt
             return e
         }
     }
@@ -184,7 +197,7 @@ enum Backup {
         let entries = try context.fetch(FetchDescriptor<Entry>(sortBy: [SortDescriptor(\.date)]))
         let lookup = Lookup(accounts: accounts, categories: categories)
 
-        var lines = ["date,type,amount,my_share,partner_share,refund,account,to_account,category,merchant,note,confirmed"]
+        var lines = ["date,type,amount,my_share,partner_share,refund,account,to_account,category,merchant,note,confirmed,installments"]
         for e in entries {
             let fields: [String] = [
                 e.date.formatted(.iso8601.year().month().day()),
@@ -199,6 +212,7 @@ enum Backup {
                 e.merchant,
                 e.note,
                 e.kind == .payoff ? (e.isConfirmed ? "yes" : "no") : "",
+                e.isInstallment ? String(e.installmentCount) : "",
             ]
             lines.append(fields.map(csvEscape).joined(separator: ","))
         }

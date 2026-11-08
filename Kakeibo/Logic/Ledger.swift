@@ -14,11 +14,22 @@ struct Ledger {
     let accounts: [Account]
     let categories: [BudgetCategory]
     let entries: [Entry]
+    /// Installment schedules of card purchases paid in installments.
+    let installmentPlans: [InstallmentPlan]
 
     init(accounts: [Account], categories: [BudgetCategory] = [], entries: [Entry]) {
         self.accounts = accounts
         self.categories = categories
         self.entries = entries
+        let cards = Dictionary(accounts.filter { $0.kind == .credit }.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        installmentPlans = entries.compactMap { entry in
+            guard entry.isInstallment, let id = entry.accountID, let card = cards[id] else { return nil }
+            return InstallmentPlan(entry: entry, card: card)
+        }
+    }
+
+    func plan(for entry: Entry) -> InstallmentPlan? {
+        installmentPlans.first { $0.entry.id == entry.id }
     }
 
     func account(_ id: UUID?) -> Account? {
@@ -51,6 +62,37 @@ struct Ledger {
             if let cutoff, entry.date >= cutoff { continue }
             total += Ledger.effect(of: entry, on: account.id)
         }
+        if account.kind == .credit {
+            total += installmentAdjustment(for: account, before: cutoff)
+        }
+        return total
+    }
+
+    /// Installments change a card's balance beyond the purchase itself (which owes the full price):
+    /// each fee is charged when its statement closes, and installments billed before the card was added
+    /// to Kakeibo were paid outside the app.
+    private func installmentAdjustment(for card: Account, before cutoff: Date?) -> Int {
+        var total = 0
+        for plan in installmentPlans where plan.card.id == card.id {
+            for slice in plan.slices {
+                if slice.isBeforeTracking {
+                    if cutoff.map({ slice.paymentDate < $0 }) ?? true { total += slice.principal }
+                } else if slice.fee > 0, cutoff.map({ slice.cycle.closingBoundary <= $0 }) ?? true {
+                    total -= slice.fee
+                }
+            }
+        }
+        return total
+    }
+
+    /// Installment principal on a card that is owed but billed on statements after `cycle`.
+    func deferredPrincipal(for card: Account, after cycle: BillCycle) -> Int {
+        var total = 0
+        for plan in installmentPlans where plan.card.id == card.id && plan.entry.date < cycle.closingBoundary {
+            for slice in plan.slices where slice.cycle.closingBoundary > cycle.closingBoundary {
+                total += slice.principal
+            }
+        }
         return total
     }
 
@@ -78,6 +120,8 @@ struct Ledger {
             switch entry.kind {
             case .expense:
                 guard let categoryID = entry.categoryID else { continue }
+                // Installment purchases that count monthly (or never) are added per installment below.
+                if entry.isInstallment, entry.installmentMode != .all, plan(for: entry) != nil { continue }
                 let value = entry.isRefund ? -entry.amount : entry.myShare
                 result[categoryID, default: 0] += value
             case .transfer:
@@ -88,8 +132,26 @@ struct Ledger {
                 continue
             }
         }
+        let feeCategory = cardFeesCategoryID
+        for plan in installmentPlans {
+            for slice in plan.slices where slice.paymentDate >= interval.start && slice.paymentDate < interval.end {
+                if plan.mode == .monthly, let categoryID = plan.entry.categoryID {
+                    result[categoryID, default: 0] += slice.myShare
+                }
+                if slice.fee > 0, let feeCategory {
+                    result[feeCategory, default: 0] += slice.fee
+                }
+            }
+        }
         return result
     }
+
+    /// The category installment fees count in ("Card fees", created when first needed).
+    var cardFeesCategoryID: UUID? {
+        categories.first { $0.kind == .expense && $0.name.lowercased() == Ledger.cardFeesName.lowercased() }?.id
+    }
+
+    static let cardFeesName = "Card fees"
 
     func totalSpending(in interval: DateInterval) -> Int {
         spendingByCategory(in: interval).values.reduce(0, +)

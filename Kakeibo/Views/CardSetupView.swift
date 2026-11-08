@@ -20,6 +20,7 @@ struct CardSetupView: View {
     @State private var payFrom: UUID?
     @State private var limit = 0
     @State private var limitAlert = 0
+    @State private var feeRate: Double = 0
     @State private var autoPayoff = true
     @State private var reminder = true
     @State private var warn = true
@@ -136,7 +137,7 @@ struct CardSetupView: View {
                 }
                 .listRowBackground(Palette.sheetRow)
 
-                Section("Payment") {
+                Section {
                     Picker("Pays from", selection: $payFrom) {
                         Text("Not set (I pay it myself)").tag(UUID?.none)
                         ForEach(moneyAccounts) { account in
@@ -145,6 +146,16 @@ struct CardSetupView: View {
                     }
                     Toggle("Record each payment automatically", isOn: $autoPayoff)
                         .disabled(payFrom == nil)
+                    LabeledContent("Installment fee") {
+                        HStack(spacing: 4) {
+                            PercentField(placeholder: "None", value: $feeRate)
+                            Text("% a year").foregroundStyle(Palette.textSecondary)
+                        }
+                    }
+                } header: {
+                    Text("Payment")
+                } footer: {
+                    Text("The annual rate for paying in installments (分割手数料), used to work out each purchase's fee. Two installments are always free, and any purchase can set its own exact fee.")
                 }
                 .listRowBackground(Palette.sheetRow)
 
@@ -282,6 +293,7 @@ struct CardSetupView: View {
         payFrom = card.payFromAccountID
         limit = card.creditLimit
         limitAlert = card.limitAlertPercent
+        feeRate = card.installmentFeeRate
         autoPayoff = card.autoPayoff
         reminder = card.paymentReminder
         warn = card.shortfallWarning
@@ -317,6 +329,7 @@ struct CardSetupView: View {
         target.autoPayoff = autoPayoff
         target.creditLimit = max(limit, 0)
         target.limitAlertPercent = limit > 0 ? limitAlert : 0
+        target.installmentFeeRate = feeRate
         target.paymentReminder = reminder
         target.shortfallWarning = warn
         if card != nil { target.isArchived = archived }

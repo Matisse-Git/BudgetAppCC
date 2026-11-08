@@ -177,6 +177,14 @@ enum DemoData {
         add(.expense, 648, date(thisMonth, 5, hour: 9), from: "SMBC Olive credit", category: "Konbini", merchant: "FamilyMart", review: true)
         add(.expense, 2_980, date(thisMonth, 5, hour: 13), from: "Cash", category: "Restaurants", merchant: "Matsuya")
 
+        // A phone on 24 interest-free installments, counted monthly.
+        let phone = Entry(kind: .expense, amount: 239_800, date: date(lastMonth, 20), accountID: account("SMBC Olive credit"),
+                          categoryID: category("Phone"))
+        phone.merchant = "iPhone"
+        phone.installmentCount = 24
+        phone.installmentFeeOverride = 0
+        entries.append(phone)
+
         entries.forEach { context.insert($0) }
         try? context.save()
     }

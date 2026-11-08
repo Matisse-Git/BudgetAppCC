@@ -137,6 +137,37 @@ struct YenField: View {
     }
 }
 
+/// A percentage like 15.0, saved on every keystroke (see `YenField`). Empty means 0.
+struct PercentField: View {
+    let placeholder: String
+    @Binding var value: Double
+    @State private var text = ""
+
+    var body: some View {
+        TextField(placeholder, text: $text)
+            .keyboardType(.decimalPad)
+            .multilineTextAlignment(.trailing)
+            .monospacedDigit()
+            .onAppear { text = PercentField.display(value) }
+            .onChange(of: text) { _, typed in
+                let parsed = PercentField.parse(typed)
+                if parsed != value { value = parsed }
+            }
+    }
+
+    nonisolated static func display(_ value: Double) -> String {
+        guard value > 0 else { return "" }
+        return value.formatted(.number.precision(.fractionLength(0...2)))
+    }
+
+    /// "15", "14.6", "14,6" (decimal comma) → a number between 0 and 100.
+    nonisolated static func parse(_ text: String) -> Double {
+        let halfWidth = text.applyingTransform(.fullwidthToHalfwidth, reverse: false) ?? text
+        let cleaned = halfWidth.replacingOccurrences(of: ",", with: ".").filter { $0.isNumber || $0 == "." }
+        return min(max(Double(cleaned) ?? 0, 0), 100)
+    }
+}
+
 struct DayPicker: View {
     let title: String
     @Binding var day: Int

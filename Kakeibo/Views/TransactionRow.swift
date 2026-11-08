@@ -135,6 +135,9 @@ struct TransactionRow: View {
             if entry.kind == .payoff && entry.isAutoCreated {
                 AutoBadge()
             }
+            if entry.isInstallment {
+                InstallmentBadge(count: entry.installmentCount)
+            }
             if entry.isSharedExpense {
                 Image(systemName: "person.2.fill")
                     .font(.caption2)
@@ -190,5 +193,19 @@ extension EntryDraft {
         return EntryDraft(kind: .transfer, amount: reminder.shortfall, accountID: source?.id, toAccountID: payer.id,
                           note: "For \(reminder.account.name) bill",
                           reason: "Covers the \(reminder.account.name) bill on \(date)")
+    }
+}
+
+/// "24 months" next to an installment purchase.
+struct InstallmentBadge: View {
+    let count: Int
+
+    var body: some View {
+        Text("\(count) months")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(Palette.accentSoftText)
+            .padding(.horizontal, 6)
+            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Palette.accentSoftFill))
+            .accessibilityLabel("Paid in \(count) installments")
     }
 }

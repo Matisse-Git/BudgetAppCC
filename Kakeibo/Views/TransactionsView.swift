@@ -286,12 +286,14 @@ struct TransactionsView: View {
         let now = Date()
         let query = search.trimmingCharacters(in: .whitespaces).lowercased()
         let shown = entries.filter { $0.date <= now && matches($0, query: query, lookup: lookup) }
+        let ledger = Ledger(accounts: accounts, categories: categories, entries: entries)
+        // Unfiltered, a month's total is what it counted, installment slices included.
+        let unfiltered = query.isEmpty && accountFilter == nil && categoryFilter == nil && typeFilter != .income && typeFilter != .transfers
         var items: [FeedItem] = shown.map { .entry($0) }
 
         // Statements closing, when nothing narrows the list (or it's narrowed to that card).
         let showsStatements = query.isEmpty && categoryFilter == nil && (typeFilter == .all || typeFilter == .transfers)
         if showsStatements, let oldest = entries.last?.date {
-            let ledger = Ledger(accounts: accounts, categories: categories, entries: entries)
             for event in Billing.closedStatements(ledger: ledger, from: oldest, to: now, calendar: calendar)
             where accountFilter == nil || accountFilter == event.account.id {
                 items.append(.statement(event))
@@ -305,7 +307,8 @@ struct TransactionsView: View {
             let days = byDay.keys.sorted(by: >).map { day in
                 DaySection(date: day, items: (byDay[day] ?? []).sorted { $0.date > $1.date })
             }
-            return MonthSection(start: monthStart, days: days, filter: typeFilter)
+            return MonthSection(start: monthStart, days: days, filter: typeFilter,
+                                ledgerSpent: unfiltered ? ledger.totalSpending(in: Ledger.monthInterval(containing: monthStart, calendar: calendar)) : nil)
         }
     }
 }
@@ -344,7 +347,9 @@ private struct DaySection: Identifiable {
 
     /// My spending that day.
     var spent: Int {
-        items.compactMap(\.entry).filter { $0.kind == .expense }.reduce(0) { $0 + ($1.isRefund ? -$1.amount : $1.myShare) }
+        items.compactMap(\.entry)
+            .filter { $0.kind == .expense && !($0.isInstallment && $0.installmentMode != .all) }
+            .reduce(0) { $0 + ($1.isRefund ? -$1.amount : $1.myShare) }
     }
 }
 
@@ -352,6 +357,7 @@ private struct MonthSection: Identifiable {
     let start: Date
     let days: [DaySection]
     let filter: TransactionsView.TypeFilter
+    var ledgerSpent: Int? = nil
     var id: Date { start }
 
     var title: String {
@@ -367,7 +373,7 @@ private struct MonthSection: Identifiable {
         case .transfers:
             return entries.count == 1 ? "1 transfer" : "\(entries.count) transfers"
         case .all, .expenses:
-            return "\(Yen.format(days.reduce(0) { $0 + $1.spent })) spent"
+            return "\(Yen.format(ledgerSpent ?? days.reduce(0) { $0 + $1.spent })) spent"
         }
     }
 }

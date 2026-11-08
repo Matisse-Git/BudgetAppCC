@@ -78,12 +78,29 @@ enum Maintenance {
             entries = (try? context.fetch(FetchDescriptor<Entry>())) ?? entries
         }
 
-        let ledger = Ledger(accounts: accounts, categories: categories, entries: entries)
+        var allCategories = categories
+        if let added = ensureCardFeesCategory(context, accounts: accounts, categories: categories, entries: entries) {
+            allCategories.append(added)
+        }
+        let ledger = Ledger(accounts: accounts, categories: allCategories, entries: entries)
         writeWidgetSnapshot(ledger, now: now)
         BillNotifications.reschedule(ledger: ledger, now: now)
         BillNotifications.announcePayments(paid, ledger: ledger, now: now)
         BillNotifications.checkLimits(ledger: ledger, now: now)
         BillNotifications.scheduleEveningReminder()
+    }
+
+    /// Installment fees count as spending in "Card fees"; the category is created the first time a plan
+    /// has a fee.
+    static func ensureCardFeesCategory(_ context: ModelContext, accounts: [Account], categories: [BudgetCategory],
+                                       entries: [Entry]) -> BudgetCategory? {
+        let ledger = Ledger(accounts: accounts, categories: categories, entries: entries)
+        guard ledger.cardFeesCategoryID == nil, ledger.installmentPlans.contains(where: { $0.totalFee > 0 }) else { return nil }
+        let category = BudgetCategory(name: Ledger.cardFeesName, emoji: "💳", kind: .expense,
+                                      sortOrder: (categories.map(\.sortOrder).filter { $0 < 100 }.max() ?? 0) + 1)
+        context.insert(category)
+        try? context.save()
+        return category
     }
 
     static func writeWidgetSnapshot(_ ledger: Ledger, now: Date = Date()) {

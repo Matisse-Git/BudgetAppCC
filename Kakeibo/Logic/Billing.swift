@@ -69,7 +69,7 @@ struct BillReminder: Identifiable {
 struct StatementEvent: Identifiable {
     let account: Account
     let cycle: BillCycle
-    /// Owed on the card when the statement closed.
+    /// What the statement billed.
     let amount: Int
 
     var id: String { cycle.key(for: account.id) }
@@ -176,8 +176,13 @@ enum Billing {
 
     /// What is still unpaid from a cycle's statement: owed at closing minus payoffs made after closing
     /// (and before `cutoff`) that aren't tied to a different cycle.
+    /// What a statement billed: owed when it closed, minus installments that go on later statements.
+    static func statementTotal(for account: Account, cycle: BillCycle, ledger: Ledger) -> Int {
+        -ledger.balance(of: account, before: cycle.closingBoundary) - ledger.deferredPrincipal(for: account, after: cycle)
+    }
+
     static func due(for account: Account, cycle: BillCycle, ledger: Ledger, before cutoff: Date = .distantFuture) -> Int {
-        let owedAtClose = -ledger.balance(of: account, before: cycle.closingBoundary)
+        let owedAtClose = statementTotal(for: account, cycle: cycle, ledger: ledger)
         let key = cycle.key(for: account.id)
         var paid = 0
         for entry in ledger.entries where entry.date >= cycle.closingBoundary && entry.date < cutoff {
@@ -193,14 +198,16 @@ enum Billing {
         let cycle = latestCycle(rule: rule, now: now, calendar: calendar)
         let next = shifted(cycle, by: 1, rule: rule, calendar: calendar)
         let dueAmount = due(for: account, cycle: cycle, ledger: ledger)
-        let owedNow = -ledger.balance(of: account)
+        // Owed today, billed or not, including every installment still to come (it counts against the limit).
+        let owedNow = -ledger.balance(of: account, before: now)
+        let laterInstallments = ledger.deferredPrincipal(for: account, after: next)
         let dayAfterPayment = calendar.date(byAdding: .day, value: 1, to: cycle.paymentDate) ?? cycle.paymentDate
         return CardStatus(
             cycle: cycle,
             next: next,
             due: dueAmount,
             dueDate: cycle.paymentDate,
-            nextSoFar: max(0, owedNow - dueAmount),
+            nextSoFar: max(0, owedNow - dueAmount - laterInstallments),
             nextDueDate: next.paymentDate,
             isOverdue: dueAmount > 0 && now >= dayAfterPayment,
             owedNow: owedNow
@@ -215,7 +222,7 @@ enum Billing {
             var cycle = latestCycle(rule: rule, now: end, calendar: calendar)
             for _ in 0..<36 {
                 guard cycle.closingBoundary > start else { break }
-                let owed = -ledger.balance(of: account, before: cycle.closingBoundary)
+                let owed = statementTotal(for: account, cycle: cycle, ledger: ledger)
                 if owed > 0 { events.append(StatementEvent(account: account, cycle: cycle, amount: owed)) }
                 cycle = shifted(cycle, by: -1, rule: rule, calendar: calendar)
             }

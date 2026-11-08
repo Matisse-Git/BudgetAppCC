@@ -23,7 +23,16 @@ struct CategoryDetailView: View {
         let spent = ledger.spendingByCategory(in: interval)[category.id] ?? 0
         let budget = category.isArchived ? 0 : category.monthlyBudget
         let item = BudgetPace.categoryPace(category, spent: spent, elapsed: pace.daysElapsed, days: pace.daysInMonth, previous: 0)
-        let monthEntries = entries.filter { $0.categoryID == category.id && $0.kind == .expense && interval.contains($0.date) }
+        // Installment purchases that count monthly (or never) show as this month's slices instead.
+        let monthEntries = entries.filter {
+            $0.categoryID == category.id && $0.kind == .expense && $0.date >= interval.start && $0.date < interval.end
+                && !($0.isInstallment && $0.installmentMode != .all && ledger.plan(for: $0) != nil)
+        }
+        let slices = ledger.installmentPlans
+            .filter { $0.entry.categoryID == category.id && $0.mode == .monthly }
+            .flatMap { plan in
+                plan.slices.filter { $0.paymentDate >= interval.start && $0.paymentDate < interval.end }.map { (plan: plan, slice: $0) }
+            }
         let lookup = Lookup(accounts: accounts, categories: categories)
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
@@ -36,6 +45,30 @@ struct CategoryDetailView: View {
                     .padding(.top, 16)
                 lastSixMonths(ledger: ledger, budget: budget)
                     .padding(.top, 16)
+                if !slices.isEmpty {
+                    SectionCaps(title: "Installments", trailing: Yen.format(slices.reduce(0) { $0 + $1.slice.myShare }))
+                        .padding(.top, Metrics.sectionSpacing)
+                    CardList {
+                        ForEach(Array(slices.enumerated()), id: \.offset) { index, item in
+                            if index > 0 { ListDivider(inset: 16) }
+                            NavigationLink {
+                                TransactionDetailView(entry: item.plan.entry)
+                            } label: {
+                                KRow("\(EntryPresentation(entry: item.plan.entry, lookup: lookup).title) · \(item.slice.number) of \(item.plan.slices.count)",
+                                     subtitle: "Paid \(BillingText.day(item.slice.paymentDate)) · \(item.plan.card.name)") {
+                                    EmptyView()
+                                } trailing: {
+                                    Text(Yen.format(item.slice.myShare))
+                                        .font(.body.weight(.semibold))
+                                        .monospacedDigit()
+                                        .foregroundStyle(Palette.textPrimary)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.top, 8)
+                }
                 entriesSection(monthEntries, lookup: lookup, monthName: interval.start.formatted(.dateTime.month(.wide)))
             }
             .padding(.horizontal, Metrics.gutter)

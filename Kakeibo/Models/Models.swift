@@ -119,6 +119,8 @@ final class Account {
     var creditLimit: Int = 0
     /// Alert when what's owed reaches this percentage of the limit. 0 means off.
     var limitAlertPercent: Int = 0
+    /// Installment fee (分割手数料) as an annual percentage, e.g. 15.0. 0 means no fee.
+    var installmentFeeRate: Double = 0
     /// Remind 3 days and 1 day before each payment.
     var paymentReminder: Bool = true
     /// Warn when the paying account won't cover a bill on its due date.
@@ -230,6 +232,16 @@ final class Entry {
     var currencyCode: String = "JPY"
     var createdAt: Date = Date()
 
+    // Card installments (分割払い). Only for non-refund expenses on a credit card.
+    /// Number of monthly installments; 0 or 1 means paid in one go.
+    var installmentCount: Int = 0
+    /// How the purchase counts as spending (`InstallmentMode`).
+    var installmentModeRaw: String = InstallmentMode.monthly.rawValue
+    /// Exact total fee for this purchase; -1 uses the card's rate.
+    var installmentFeeOverride: Int = -1
+    /// Set by "Pay off the rest": installments not yet billed move to the bill open on this date.
+    var installmentPaidOffAt: Date? = nil
+
     init(kind: EntryKind, amount: Int, date: Date = Date(), accountID: UUID? = nil, toAccountID: UUID? = nil, categoryID: UUID? = nil) {
         self.id = UUID()
         self.kindRaw = kind.rawValue
@@ -250,4 +262,40 @@ final class Entry {
     var myShare: Int { amount - partnerShare }
 
     var isSharedExpense: Bool { kind == .expense && !isRefund && partnerShare > 0 }
+
+    /// A purchase paid in two or more card installments.
+    var isInstallment: Bool { kind == .expense && !isRefund && installmentCount >= 2 }
+
+    var installmentMode: InstallmentMode {
+        get { InstallmentMode(rawValue: installmentModeRaw) ?? .monthly }
+        set { installmentModeRaw = newValue.rawValue }
+    }
+}
+
+/// How an installment purchase counts as spending.
+enum InstallmentMode: String, Codable, CaseIterable, Identifiable {
+    /// The full amount in the month it was bought.
+    case all
+    /// Each installment in the month it's paid.
+    case monthly
+    /// Never budget spending; it only lowers net worth while it's owed.
+    case debt
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .all: return "All now"
+        case .monthly: return "Monthly"
+        case .debt: return "Debt only"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .all: return "The full price counts as spending this month."
+        case .monthly: return "Each installment counts in the month it's paid."
+        case .debt: return "Never counts toward budgets; only lowers net worth until it's paid."
+        }
+    }
 }

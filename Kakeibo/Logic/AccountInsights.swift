@@ -113,7 +113,7 @@ enum CardHistory {
         var result: [PastStatement] = []
         for back in 1...max(count, 1) {
             let cycle = Billing.shifted(latest, by: -back, rule: rule, calendar: calendar)
-            let amount = -ledger.balance(of: card, before: cycle.closingBoundary)
+            let amount = Billing.statementTotal(for: card, cycle: cycle, ledger: ledger)
             guard amount > 0 else { continue }
             let next = Billing.shifted(cycle, by: 1, rule: rule, calendar: calendar)
             let key = cycle.key(for: card.id)

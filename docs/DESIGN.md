@@ -84,6 +84,32 @@ These decisions were agreed before any code was written. Update this file when a
   per-card switches in card setup.
 - Activity shows "statement closed" rows on the day each statement closes.
 
+## Card installments (分割払い)
+
+- A card purchase can be paid in installments: in Quick Add, ⋯ › **Pay in installments…** (only for an
+  expense on a credit card; also when editing, for あとから分割). You enter the total and pick the months
+  (2, 3, 5, 6, 10, 12, 15, 18, 20, 24, 30, 36 or a custom count). The remainder of the split goes on the
+  first installment (¥100,000 over 3 → 33,334 + 33,333 + 33,333).
+- Installment 1 is on the bill the purchase would normally land on; the rest follow monthly, moved off
+  weekends and holidays like any bill. Statements bill only that month's installment; auto payoffs,
+  shortfall warnings and bank forecasts follow.
+- How it counts, chosen per purchase: **Monthly** (default; each installment in the month it's paid),
+  **All now** (the full price in the purchase month) or **Debt only** (never budget spending; it only lowers
+  net worth). A partner's share is owed in full at once.
+- Fees: each card has an optional annual rate (`installmentFeeRate`); the fee is worked out with level
+  payments (元利均等), which matches Japanese fee tables (3 payments at 15% = ¥2.51 per ¥100). Any purchase
+  can set an exact fee instead (¥0 for interest-free campaigns). Two installments are always free. Fees are
+  charged a slice on each statement and count as spending in **Card fees**, created when first needed.
+- The whole unpaid price counts against the credit limit and the limit alert, and in "Owed on cards".
+- Installments billed before the card was added to Kakeibo count as already paid.
+- The plan can be changed until its first statement closes; after that only **Pay off the rest** (the
+  installments not yet billed move onto the open bill, without further fees) or deleting the purchase.
+- Shown as: one Activity row with a "24 months" badge; this month's slices on the Category page; an
+  Installments card and timeline on the purchase; an Installments list and the installments on the current
+  bill on the card page.
+- Not handled: refunds of installment purchases (pay off the rest, then log the refund), notifications when
+  a plan ends.
+
 ## Partner ("paid for both of us")
 
 - Split options on an expense: 50% (default when splitting), all hers, or a custom yen amount. Only my

@@ -49,6 +49,10 @@ struct EntryEditorView: View {
     @State private var split: SplitMode = .none
     @State private var customShare = 0
     @State private var isRefund = false
+    @State private var installmentCount = 0
+    @State private var installmentMode: InstallmentMode = .monthly
+    @State private var installmentFee = -1
+    @State private var settingInstallments = false
     @State private var reason: String?
     @State private var loaded = false
     /// Set once the starting values are in, so filling them in doesn't vibrate or re-suggest.
@@ -94,6 +98,32 @@ struct EntryEditorView: View {
         }
     }
 
+    /// The selected account when it's a credit card: only card purchases can be paid in installments.
+    private var selectedCard: Account? {
+        accounts.first { $0.id == accountID && $0.kind == .credit }
+    }
+
+    private var offersInstallments: Bool {
+        kind == .expense && !isRefund && selectedCard != nil
+    }
+
+    /// Billing has started on this purchase's plan: it can only be paid off now (from its detail page).
+    private var installmentsLocked: Bool {
+        guard let entry = editing, entry.isInstallment, let card = selectedCard,
+              let plan = InstallmentPlan(entry: entry, card: card) else { return false }
+        return plan.isLocked(now: Date())
+    }
+
+    private var installmentSummary: String? {
+        guard offersInstallments, installmentCount >= 2, let card = selectedCard else { return nil }
+        let fee = installmentFee >= 0 ? installmentFee
+            : Installments.fee(principal: amount, months: installmentCount, annualRate: card.installmentFeeRate)
+        let principal = Installments.split(amount, into: installmentCount)
+        let fees = Installments.split(fee, into: installmentCount)
+        let monthly = principal.count > 1 ? principal[1] + fees[1] : (principal.first ?? 0)
+        return "\(installmentCount) months · \(Yen.format(monthly))/mo · \(installmentMode.label)"
+    }
+
     private var canSave: Bool {
         guard amount > 0 else { return false }
         if kind == .transfer {
@@ -127,6 +157,12 @@ struct EntryEditorView: View {
         .presentationBackground(Palette.sheet)
         .sheet(isPresented: $pickingDate) {
             EntryDateSheet(date: $date)
+        }
+        .sheet(isPresented: $settingInstallments) {
+            if let card = selectedCard {
+                InstallmentSheet(amount: amount, card: card, purchaseDate: date, count: $installmentCount,
+                                 mode: $installmentMode, feeOverride: $installmentFee)
+            }
         }
         .sheet(isPresented: $pickingCategory) {
             CategoryPickerSheet(categories: allCategories, selection: $categoryID)
@@ -169,6 +205,18 @@ struct EntryEditorView: View {
                     }
                 }
                 Toggle("Refund", isOn: $isRefund)
+                if offersInstallments {
+                    if installmentsLocked {
+                        Text("Installments are fixed once billing starts")
+                    } else {
+                        Button {
+                            settingInstallments = true
+                        } label: {
+                            Label(installmentCount >= 2 ? "Change installments…" : "Pay in installments…",
+                                  systemImage: "calendar.badge.clock")
+                        }
+                    }
+                }
             }
             if kind == .transfer {
                 Button {
@@ -218,6 +266,22 @@ struct EntryEditorView: View {
                 .padding(.horizontal, 12)
                 .frame(height: 30)
                 .background(Capsule().fill(Palette.positive.opacity(0.14)))
+            } else if let installmentSummary {
+                Button {
+                    if !installmentsLocked { settingInstallments = true }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "calendar.badge.clock").font(.caption.weight(.bold))
+                        Text(installmentSummary)
+                    }
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Palette.accentSoftText)
+                    .padding(.horizontal, 12)
+                    .frame(height: 30)
+                    .background(Capsule().fill(Palette.accentSoftFill))
+                }
+                .buttonStyle(.plain)
+                .monospacedDigit()
             } else if partnerShare > 0 {
                 Text("You \(Yen.format(amount - partnerShare)) · \(partnerName) \(Yen.format(partnerShare))")
                     .font(.footnote.weight(.semibold))
@@ -494,6 +558,9 @@ struct EntryEditorView: View {
             note = entry.note
             merchant = entry.merchant
             isRefund = entry.isRefund
+            installmentCount = entry.installmentCount
+            installmentMode = entry.installmentMode
+            installmentFee = entry.installmentFeeOverride
             if entry.partnerShare == 0 {
                 split = .none
             } else if entry.partnerShare == entry.amount {
@@ -560,6 +627,13 @@ struct EntryEditorView: View {
         entry.isRefund = kind == .expense && isRefund
         entry.partnerShare = partnerShare
         entry.needsReview = false
+        if !installmentsLocked {
+            let installments = offersInstallments && installmentCount >= 2
+            entry.installmentCount = installments ? installmentCount : 0
+            entry.installmentMode = installmentMode
+            entry.installmentFeeOverride = installments ? installmentFee : -1
+            if !installments { entry.installmentPaidOffAt = nil }
+        }
         if isNew { context.insert(entry) }
         context.saveAndRefresh()
         let limitNote = limitCrossing(entry)
@@ -582,6 +656,9 @@ struct EntryEditorView: View {
             return "Saved \(Yen.format(entry.amount)) · \(name(entry.accountID)) → \(name(entry.toAccountID))"
         }
         let category = categories.first { $0.id == entry.categoryID }?.name ?? "Uncategorised"
+        if entry.isInstallment {
+            return "Saved \(Yen.format(entry.amount)) · \(entry.installmentCount) months · \(category)"
+        }
         return "Saved \(Yen.format(entry.amount)) · \(category) · \(name(entry.accountID))"
     }
 

@@ -44,6 +44,7 @@ struct CreditCardView: View {
                     .padding(.top, Metrics.sectionSpacing)
                 nextBill(status, ledger: ledger, color: color, now: now)
                     .padding(.top, 8)
+                installments(ledger: ledger, now: now)
                 pastStatements(ledger: ledger, now: now)
             }
             .padding(.horizontal, Metrics.gutter)
@@ -69,7 +70,7 @@ struct CreditCardView: View {
 
     private func currentBill(_ status: CardStatus, ledger: Ledger, now: Date) -> some View {
         let cycle = status.cycle
-        let total = -ledger.balance(of: card, before: cycle.closingBoundary)
+        let total = Billing.statementTotal(for: card, cycle: cycle, ledger: ledger)
         let payer = ledger.account(card.payFromAccountID)
         let count = CardHistory.entries(of: card, in: cycle, ledger: ledger).count
         return CardList {
@@ -95,6 +96,12 @@ struct CreditCardView: View {
             .padding(.top, 16)
             .padding(.bottom, 14)
             .frame(maxWidth: .infinity, alignment: .leading)
+            ForEach(Array(installmentsBilled(on: cycle, ledger: ledger).enumerated()), id: \.offset) { _, item in
+                ListDivider(inset: 16)
+                InfoRow(title: "\(item.title) · \(item.slice.number) of \(item.count)") {
+                    Text(Yen.format(item.slice.total)).monospacedDigit()
+                }
+            }
             ListDivider(inset: 16)
             if let payer {
                 NavigationLink {
@@ -222,6 +229,40 @@ struct CreditCardView: View {
             let what = name == "Bank holiday" ? "a bank holiday" : name
             return "\(nominal) is \(what), so payment moves to the \(direction) business day."
         case nil: return nil
+        }
+    }
+
+    /// Installments of plans billed on a statement, with the purchase's title.
+    private func installmentsBilled(on cycle: BillCycle, ledger: Ledger) -> [(title: String, slice: InstallmentSlice, count: Int)] {
+        let lookup = Lookup(accounts: accounts, categories: categories)
+        return ledger.installmentPlans
+            .filter { $0.card.id == card.id }
+            .flatMap { plan in
+                plan.slices(on: cycle).map { slice in
+                    (title: EntryPresentation(entry: plan.entry, lookup: lookup).title, slice: slice, count: plan.slices.count)
+                }
+            }
+    }
+
+    @ViewBuilder
+    private func installments(ledger: Ledger, now: Date) -> some View {
+        let lookup = Lookup(accounts: accounts, categories: categories)
+        let active = ledger.installmentPlans.filter { $0.card.id == card.id && !$0.isFinished(by: now) }
+        if !active.isEmpty {
+            SectionCaps(title: "Installments", trailing: "\(Yen.format(active.reduce(0) { $0 + $1.remaining(after: now) })) left")
+                .padding(.top, Metrics.sectionSpacing)
+            CardList {
+                ForEach(Array(active.enumerated()), id: \.element.entry.id) { index, plan in
+                    if index > 0 { ListDivider() }
+                    NavigationLink {
+                        TransactionDetailView(entry: plan.entry)
+                    } label: {
+                        InstallmentPlanRow(plan: plan, lookup: lookup, now: now)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.top, 8)
         }
     }
 
