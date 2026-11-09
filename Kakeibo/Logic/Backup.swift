@@ -223,7 +223,8 @@ enum Backup {
         file.entries.forEach { context.insert($0.make()) }
         // A backup from before quick entries existed leaves the current ones alone.
         if let quickEntries = file.quickEntries {
-            try context.delete(model: QuickEntry.self)
+            // One by one rather than a batch delete, which skips records inserted but not yet saved.
+            try context.fetch(FetchDescriptor<QuickEntry>()).forEach { context.delete($0) }
             quickEntries.forEach { context.insert($0.make()) }
         }
         try context.save()
