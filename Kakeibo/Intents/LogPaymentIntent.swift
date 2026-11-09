@@ -86,5 +86,11 @@ struct KakeiboShortcuts: AppShortcutsProvider {
             shortTitle: "Log payment",
             systemImageName: "creditcard"
         )
+        AppShortcut(
+            intent: LogQuickEntryIntent(),
+            phrases: ["Log a quick entry in \(.applicationName)"],
+            shortTitle: "Log quick entry",
+            systemImageName: "bolt"
+        )
     }
 }

@@ -30,6 +30,7 @@ struct RootView: View {
     @Query(RootView.recentDescriptor) private var recentEntries: [Entry]
     @Query(sort: \BudgetCategory.sortOrder) private var categories: [BudgetCategory]
     @State private var showSetup = false
+    @State private var showQuickEntries = false
     @State private var tab: AppTab = .summary
     @AppStorage(SettingsKey.faceIDLock) private var faceIDLock = false
     @AppStorage(SettingsKey.hideInSwitcher) private var hideInSwitcher = true
@@ -98,6 +99,11 @@ struct RootView: View {
             EntryEditorView(mode: .new, draft: draft)
                 .environment(toasts)
         }
+        .sheet(isPresented: $showQuickEntries) {
+            NavigationStack {
+                QuickEntriesView(showsDone: true)
+            }
+        }
         .fullScreenCover(isPresented: $showSetup) {
             OnboardingView {
                 setupDone = true
@@ -124,6 +130,8 @@ struct RootView: View {
         }
         .onOpenURL { url in
             if url.host == "add" { addDraft = EntryDraft() }
+            // The Quick entries widget with nothing set up yet.
+            if url.host == "quick-entries" { showQuickEntries = true }
         }
         .onReceive(NotificationCenter.default.publisher(for: PendingAction.notification)) { _ in
             if PendingAction.consumeAdd() { addDraft = EntryDraft() }

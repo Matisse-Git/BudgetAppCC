@@ -8,6 +8,7 @@ struct SettingsView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \Account.sortOrder) private var accounts: [Account]
     @Query(sort: \BudgetCategory.sortOrder) private var categories: [BudgetCategory]
+    @Query private var quickEntries: [QuickEntry]
     @AppStorage(SettingsKey.defaultAccountID) private var defaultAccountID = ""
     @AppStorage(SettingsKey.partnerName) private var partnerName = SettingsKey.defaultPartnerName
     @AppStorage(SettingsKey.setupDone) private var setupDone = true
@@ -132,6 +133,11 @@ struct SettingsView: View {
                     CategoriesView()
                 } label: {
                     LabeledContent("Categories & budgets", value: "\(categories.filter { !$0.isArchived }.count)")
+                }
+                NavigationLink {
+                    QuickEntriesView()
+                } label: {
+                    LabeledContent("Quick entries", value: "\(quickEntries.count)")
                 }
                 Button {
                     reorderingAccounts = true

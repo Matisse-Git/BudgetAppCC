@@ -11,7 +11,8 @@ These decisions were agreed before any code was written. Update this file when a
   - Why not a paid account: about ¥12,800 a year for one budget app works against the point of budgeting.
     Revisit this when iCloud or sharing is wanted.
 - Data lives in the app's own container, not the App Group, so it survives refreshes and App Group ID
-  rewrites by the installer. The App Group is used only for the widget snapshot. `AppGroup` reads
+  rewrites by the installer. The App Group is used only for the widget snapshot and for quick entries
+  (the published list and widget taps waiting to be saved; see Quick entries). `AppGroup` reads
   AltStore's `ALTAppGroups` key when present; whether iLoader keeps the App Group is untested, and at
   worst the widget shows placeholder numbers.
 - Installing a new build over the old one must keep the data, so SwiftData model changes are additive
@@ -142,7 +143,7 @@ These decisions were agreed before any code was written. Update this file when a
   recency; the account last used with that category), unless "Suggest category & account" is off. The
   grid shows the seven most used categories in your own order, plus All.
 - Layout, top to bottom: close, Expense/Income/Transfer, ⋯ (split, refund, delete); the amount (income in
-  green with +¥); date/time and note chips; "Paid with" account chips; category tiles; the keypad pinned
+  green with +¥); quick-entry chips (new expenses only); date/time and note chips; "Paid with" account chips; category tiles; the keypad pinned
   to the bottom with 00, 000 and a tall Save key. The note's keyboard covers the pad rather than squashing
   the screen.
 - Save closes the sheet. A new entry then shows "Saved ¥980 · Dining Out · Wallet" with **Undo** over the
@@ -155,6 +156,40 @@ These decisions were agreed before any code was written. Update this file when a
   - The account is matched from the Wallet card name; the category from the last entry at the same merchant.
   - It's marked "to review". It's ready for a Wallet transaction automation, which hasn't been tested on
     Japanese cards (iD/QUICPay may not pass the merchant).
+
+## Quick entries
+
+For purchases that are the same every time (daily breakfast, a usual coffee). Not repeating entries (see
+Later): nothing is logged on a schedule; you log it when it happens.
+
+- A **quick entry** (`QuickEntry`) stores a name, amount, category, account (empty means the default
+  account), optional merchant, optional partner split and an emoji (empty means the category's). Expenses
+  only.
+- Managed in Settings › Organize › **Quick entries** (add, edit, reorder, swipe to delete), or made from an
+  existing expense: edit it, then ⋯ › **Save as Quick Entry…** fills in the editor from that entry.
+- The logged entry is an ordinary expense: note = the quick entry's name, merchant = its merchant, not
+  marked "to review". It remembers its quick entry (`Entry.quickEntryID`) for the widget's count.
+- If its category or account is archived it still logs, and the Settings list shows an orange note. If its
+  account was deleted, the default account is used.
+- **Quick Add:** a row of chips above the date and note. A tap fills in amount, category, account, split,
+  note and merchant (the date stays as it is), and **Save** logs it. Anything can still be changed first.
+- **Quick entries widget** (Home Screen and the swipe-right Today View): small 2 buttons, medium 4, large 8,
+  in the Settings order. The widget can't open the database, so:
+  - The app publishes a copy of each quick entry and today's counts to the App Group (`QuickEntryStore`)
+    every time `Maintenance.run` runs.
+  - A tap adds a copy of the quick entry plus the tap time to a pending list in the App Group. The button
+    flashes ✓ and shows **today ×N** (the app's count plus unsaved taps), so a double tap is visible. There's
+    no undo on the widget; delete a mistake in the app.
+  - The app saves pending taps as entries when it opens or comes to the foreground, dated when they were
+    tapped. The tap's ID becomes the entry's ID, so the same list can't be saved twice. No haptic, toast
+    or budget warning for these. Until then the taps aren't in balances or totals.
+  - If the installer drops the App Group, the widget has no quick entries to show, so taps can't go
+    missing unnoticed. With none set up it says "Add quick entries in Kakeibo" and opens
+    `kakeibo://quick-entries`.
+- **Shortcuts:** "Log Quick Entry" (pick one) saves it straight away without opening the app, e.g. from the
+  Action Button or a time-of-day automation.
+- Quick entries are in the JSON backup. Restoring a backup from before they existed leaves the current
+  ones alone.
 
 ## Haptics
 
@@ -175,7 +210,7 @@ soft, low-intensity ones were too faint to feel). Generators are kept warm (`Hap
 
 ## Data and privacy
 
-- Settings offers a JSON backup ("Back Up Now", with the date of the last one), restore, and a CSV export of
+- Settings offers a JSON backup ("Back Up Now", with the date of the last one; includes quick entries), restore, and a CSV export of
   transactions, all via the share sheet or Files. Backups aren't encrypted yet.
 - Optional Face ID (or passcode) lock when the app opens or comes back; a cover hides amounts in the app
   switcher (on by default).
@@ -188,8 +223,6 @@ soft, low-intensity ones were too faint to feel). Generators are kept warm (`Hap
   in a bank account's Upcoming list. Future-dated entries already count in projections.
 - Moving budget between categories for one month ("Cover the ¥1,800 · Move from Shopping"): needs
   per-month budget overrides. Only "Raise budget" is built.
-- Interactive widget buttons that log without opening the app (they'd have to write from the widget
-  process, but the data lives in the app's own container).
 - Notification actions (Transfer, Remind Me Tomorrow), receipt photos, encrypted backups, the card's
   billing-calendar chart and statement reconciliation ("Matches your entries").
 - Payday-based months (`monthStartDay` is stored) and the week start setting.

@@ -41,7 +41,7 @@ final class AppData {
     let container: ModelContainer
 
     private init() {
-        let schema = Schema([Account.self, BudgetCategory.self, Entry.self])
+        let schema = Schema([Account.self, BudgetCategory.self, Entry.self, QuickEntry.self])
         let folder = URL.applicationSupportDirectory
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let configuration = DemoMode.isOn
@@ -67,6 +67,10 @@ extension ModelContext {
 @MainActor
 enum Maintenance {
     static func run(_ context: ModelContext, autoPayoffs: Bool = true, now: Date = Date()) {
+        // Widget taps first, so they count everywhere below. Demo mode never touches real taps.
+        if !DemoMode.isOn {
+            QuickEntries.savePendingTaps(into: context, store: .shared, defaultAccountID: QuickEntries.defaultAccountID)
+        }
         let accounts = (try? context.fetch(FetchDescriptor<Account>())) ?? []
         let categories = (try? context.fetch(FetchDescriptor<BudgetCategory>())) ?? []
         var entries = (try? context.fetch(FetchDescriptor<Entry>())) ?? []
@@ -83,6 +87,8 @@ enum Maintenance {
             allCategories.append(added)
         }
         let ledger = Ledger(accounts: accounts, categories: allCategories, entries: entries)
+        let quickEntries = (try? context.fetch(FetchDescriptor<QuickEntry>())) ?? []
+        QuickEntries.publish(quickEntries, entries: entries, store: .shared, now: now)
         writeWidgetSnapshot(ledger, now: now)
         BillNotifications.reschedule(ledger: ledger, now: now)
         BillNotifications.announcePayments(paid, ledger: ledger, now: now)

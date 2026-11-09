@@ -65,6 +65,8 @@ struct DemoScreen: View {
                 SettingsView()
             case "categories":
                 CategoriesView()
+            case "quick-entries":
+                QuickEntriesView()
             case "review":
                 ReviewListView()
             default:
@@ -73,7 +75,10 @@ struct DemoScreen: View {
         }
     }
 
-    static let standalone: Set<String> = ["category", "card", "bank", "card-setup", "transaction", "partner", "settings", "categories", "review", "edit-accounts"]
+    static let standalone: Set<String> = [
+        "category", "card", "bank", "card-setup", "transaction", "partner", "settings", "categories", "quick-entries",
+        "review", "edit-accounts",
+    ]
 }
 
 enum DemoData {
@@ -186,6 +191,18 @@ enum DemoData {
         entries.append(phone)
 
         entries.forEach { context.insert($0) }
+
+        // Quick entries: chips in Quick Add and the Settings list.
+        let quick: [(name: String, emoji: String, amount: Int, category: String, account: String?, merchant: String, share: Int)] = [
+            ("Breakfast", "🥐", 480, "Konbini", "PayPay", "Lawson", 0),
+            ("Coffee", "☕️", 390, "Restaurants", nil, "Doutor", 0),
+            ("Lunch for two", "🍱", 1_800, "Restaurants", "Revolut", "", 900),
+        ]
+        for (index, item) in quick.enumerated() {
+            context.insert(QuickEntry(name: item.name, emoji: item.emoji, amount: item.amount, categoryID: category(item.category),
+                                      accountID: item.account.flatMap(account), merchant: item.merchant,
+                                      partnerShare: item.share, sortOrder: index))
+        }
         try? context.save()
     }
 }

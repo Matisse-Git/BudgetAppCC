@@ -44,8 +44,15 @@ A free Apple ID allows only 3 sideloaded apps at a time and a limited number of 
   or Lock Screen) or the **Next card bill** widget. Tapping one opens the add screen.
   The widget reads its numbers through an App Group. If it only ever shows placeholder numbers, the installer
   didn't keep the App Group when re-signing; the app itself is unaffected.
+- **Quick entries:** set up your usual purchases (e.g. breakfast, ¥480 at Lawson) in Settings › Quick entries,
+  or edit an expense and choose ⋯ › Save as Quick Entry. They show as chips in Quick Add and in the
+  **Quick entries** widget, which you can add to the Home Screen or the swipe-right screen (small, medium or
+  large). A tap on the widget logs the purchase: it shows ✓ and "today ×N", and the entry lands in your
+  totals the next time you open Kakeibo. If the widget stays empty after you've added quick entries, the
+  installer didn't keep the App Group.
 - **Control Center / Action Button:** add the "Log Expense" control.
-- **Shortcuts:** "Add Kakeibo Entry" opens the add screen. "Log Payment" (amount, merchant, card) saves an
+- **Shortcuts:** "Add Kakeibo Entry" opens the add screen. "Log Quick Entry" saves one of your quick entries
+  without opening the app. "Log Payment" (amount, merchant, card) saves an
   expense without opening the app and marks it for review. It's ready for a Wallet transaction
   automation, which we haven't tested on Japanese cards yet.
 
@@ -65,14 +72,14 @@ and builds `Kakeibo.ipa` with `scripts/build-ipa.sh` on every push.
 
 Layout:
 
-- `Kakeibo/Models`: SwiftData models (`Account`, `BudgetCategory`, `Entry`) and the seed data.
+- `Kakeibo/Models`: SwiftData models (`Account`, `BudgetCategory`, `Entry`, `QuickEntry`) and the seed data.
 - `Kakeibo/Logic`: balances and spending (`Ledger`), card bills and holiday shifts (`Billing`,
   `JapaneseHolidays`), budget pace and trends (`Insights`), account forecasts and card history
   (`AccountInsights`), add-sheet suggestions (`Suggestions`), account order and grouping (`AccountLayout`),
-  backup, notifications (`Maintenance`).
+  quick entries and widget taps (`QuickEntries`), backup, notifications (`Maintenance`).
 - `Kakeibo/Views`: SwiftUI screens, built on the shared components in `DesignComponents.swift`.
 - `Shared/DesignTokens.swift`: colours, type and sizes from the design canvas (see CLAUDE.md).
-- `Kakeibo/Intents`: the Log Payment intent and Siri/Shortcuts phrases.
-- `KakeiboWidget`: the Home/Lock Screen widget and the Control Center button.
+- `Kakeibo/Intents`: the Log Payment and Log Quick Entry intents and Siri/Shortcuts phrases.
+- `KakeiboWidget`: the Budget, Next card bill and Quick entries widgets and the Control Center button.
 - `Shared`: code compiled into both the app and the widget.
 - `KakeiboTests`: unit tests.
