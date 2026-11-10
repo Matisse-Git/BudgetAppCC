@@ -1010,3 +1010,34 @@ final class QuickEntryTests: XCTestCase {
         XCTAssertEqual(try older.mainContext.fetch(FetchDescriptor<QuickEntry>()).map(\.name), ["Kept"])
     }
 }
+
+final class AppGroupTests: XCTestCase {
+    /// A provisioning profile as iLoader embeds it: a signed envelope around an XML plist.
+    private func profile(groups: [String]) throws -> Data {
+        let plist: [String: Any] = [
+            "Name": "iOS Team Provisioning Profile: com.matisse.kakeibo.ABCDE12345",
+            "Entitlements": [
+                "application-identifier": "ABCDE12345.com.matisse.kakeibo.ABCDE12345",
+                "com.apple.security.application-groups": groups,
+            ],
+        ]
+        let xml = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+        return Data([0x30, 0x82, 0x3C, 0x00, 0x06, 0x09]) + xml + Data([0xA0, 0x82, 0x0B, 0x00, 0x3C, 0x3F])
+    }
+
+    func testReadsGroupsFromAnEmbeddedProfile() throws {
+        let data = try profile(groups: ["group.com.matisse.kakeibo.ABCDE12345"])
+        XCTAssertEqual(AppGroup.groups(inProvisioningProfile: data), ["group.com.matisse.kakeibo.ABCDE12345"])
+        XCTAssertEqual(AppGroup.groups(inProvisioningProfile: Data("not a profile".utf8)), [])
+    }
+
+    func testPrefersAltStoreThenProfileThenOurOwnName() {
+        let iLoader = "group.com.matisse.kakeibo.ABCDE12345"
+        XCTAssertEqual(AppGroup.resolve(altGroups: ["group.alt.kakeibo"], profileGroups: [iLoader]), "group.alt.kakeibo")
+        XCTAssertEqual(AppGroup.resolve(altGroups: nil, profileGroups: [iLoader]), iLoader)
+        XCTAssertEqual(AppGroup.resolve(altGroups: nil, profileGroups: ["group.other", iLoader]), iLoader,
+                       "Ours by name when the profile has several")
+        XCTAssertEqual(AppGroup.resolve(altGroups: nil, profileGroups: ["group.*"]), AppGroup.fallbackIdentifier)
+        XCTAssertEqual(AppGroup.resolve(altGroups: [], profileGroups: []), AppGroup.fallbackIdentifier)
+    }
+}

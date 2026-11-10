@@ -12,9 +12,12 @@ These decisions were agreed before any code was written. Update this file when a
     Revisit this when iCloud or sharing is wanted.
 - Data lives in the app's own container, not the App Group, so it survives refreshes and App Group ID
   rewrites by the installer. The App Group is used only for the widget snapshot and for quick entries
-  (the published list and widget taps waiting to be saved; see Quick entries). `AppGroup` reads
-  AltStore's `ALTAppGroups` key when present; whether iLoader keeps the App Group is untested, and at
-  worst the widget shows placeholder numbers.
+  (the published list and widget taps waiting to be saved; see Quick entries). A free Apple ID can't
+  use our group name, so the sideloader registers its own and signs the app and widget with it. `AppGroup`
+  finds it at launch: AltStore's `ALTAppGroups` Info.plist key if present, else the groups in the bundle's
+  `embedded.mobileprovision` (iLoader registers `group.com.matisse.kakeibo.<team ID>` and writes no
+  Info.plist key), else `group.com.matisse.kakeibo`. Asking for a group the app isn't signed with gives a
+  private store, which left every widget on placeholders until this was fixed.
 - Installing a new build over the old one must keep the data, so SwiftData model changes are additive
   only: new stored properties with defaults, never renamed or removed without a migration. Preferences
   that aren't data (grouping, Home layout) live in `UserDefaults` (`SettingsKey`).

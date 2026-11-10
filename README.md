@@ -42,14 +42,16 @@ A free Apple ID allows only 3 sideloaded apps at a time and a limited number of 
 
 - **Widgets:** long-press the Home Screen or Lock Screen → Edit → add the Kakeibo **Budget** widget (small, medium
   or Lock Screen) or the **Next card bill** widget. Tapping one opens the add screen.
-  The widget reads its numbers through an App Group. If it only ever shows placeholder numbers, the installer
-  didn't keep the App Group when re-signing; the app itself is unaffected.
+  The widgets read their numbers through an App Group, which iLoader registers for your Apple ID
+  (`group.com.matisse.kakeibo.<team ID>`); Kakeibo finds it in the signing profile. If a widget only ever
+  shows placeholder numbers, open Kakeibo once; if that doesn't help, the App Group isn't shared. The app
+  itself is unaffected.
 - **Quick entries:** set up your usual purchases (e.g. breakfast, ¥480 at Lawson) in Settings › Quick entries,
   or edit an expense and choose ⋯ › Save as Quick Entry. They show as chips in Quick Add and in the
   **Quick entries** widget, which you can add to the Home Screen or the swipe-right screen (small, medium or
   large). A tap on the widget logs the purchase: it shows ✓ and "today ×N", and the entry lands in your
   totals the next time you open Kakeibo. If the widget stays empty after you've added quick entries, the
-  installer didn't keep the App Group.
+  App Group isn't shared (see Widgets above).
 - **Control Center / Action Button:** add the "Log Expense" control.
 - **Shortcuts:** "Add Kakeibo Entry" opens the add screen. "Log Quick Entry" saves one of your quick entries
   without opening the app. "Log Payment" (amount, merchant, card) saves an
