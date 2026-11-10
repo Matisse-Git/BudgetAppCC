@@ -5,21 +5,42 @@ import AppIntents
 
 /// The App Group shared by the app and its widget.
 ///
-/// AltStore / SideStore rewrite App Group identifiers when they re-sign the app
-/// and record the real ones under `ALTAppGroups` in Info.plist, so read that first.
+/// Sideloaders sign with a free Apple ID, which can't use our own group name, so they register a
+/// group of their own and sign both the app and the widget with it:
+/// - AltStore / SideStore record it under `ALTAppGroups` in each Info.plist.
+/// - iLoader (isideload) registers `group.<bundle id>.<team id>` and writes no Info.plist key; the group
+///   is only in the provisioning profile it embeds in each bundle (`embedded.mobileprovision`).
+/// Asking iOS for a group the app isn't signed with quietly gives a private, unshared store, so the
+/// widget would only ever see placeholders. Without either source (simulator, Xcode) our own name is used.
 enum AppGroup {
     static let fallbackIdentifier = "group.com.matisse.kakeibo"
 
-    static var identifier: String {
-        if let groups = Bundle.main.object(forInfoDictionaryKey: "ALTAppGroups") as? [String],
-           let first = groups.first {
-            return first
-        }
-        return fallbackIdentifier
+    /// Worked out once per process.
+    static let identifier: String = resolve(
+        altGroups: Bundle.main.object(forInfoDictionaryKey: "ALTAppGroups") as? [String],
+        profileGroups: Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision")
+            .flatMap { try? Data(contentsOf: $0) }
+            .map(groups(inProvisioningProfile:)) ?? []
+    )
+
+    static let defaults: UserDefaults = UserDefaults(suiteName: identifier) ?? .standard
+
+    /// `ALTAppGroups` first, then the profile's groups (ours by name if there are several), then our own name.
+    static func resolve(altGroups: [String]?, profileGroups: [String]) -> String {
+        if let first = altGroups?.first(where: { !$0.isEmpty }) { return first }
+        let usable = profileGroups.filter { $0.hasPrefix("group.") && !$0.contains("*") }
+        return usable.first { $0.hasPrefix(fallbackIdentifier) } ?? usable.first ?? fallbackIdentifier
     }
 
-    static var defaults: UserDefaults {
-        UserDefaults(suiteName: identifier) ?? .standard
+    /// The App Groups a provisioning profile grants. The profile is a signed envelope around a plain XML
+    /// plist, so the plist is cut out by its markers rather than verifying the signature.
+    static func groups(inProvisioningProfile data: Data) -> [String] {
+        guard let start = data.range(of: Data("<?xml".utf8)),
+              let end = data.range(of: Data("</plist>".utf8), in: start.lowerBound..<data.endIndex),
+              let plist = try? PropertyListSerialization.propertyList(from: data[start.lowerBound..<end.upperBound], format: nil),
+              let profile = plist as? [String: Any],
+              let entitlements = profile["Entitlements"] as? [String: Any] else { return [] }
+        return entitlements["com.apple.security.application-groups"] as? [String] ?? []
     }
 }
 

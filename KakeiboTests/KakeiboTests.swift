@@ -906,3 +906,201 @@ final class WidgetAccountsTests: XCTestCase {
         XCTAssertNil(decoded.hideWhenLocked)
     }
 }
+
+@MainActor
+final class QuickEntryTests: XCTestCase {
+    private func makeContainer() throws -> ModelContainer {
+        try ModelContainer(for: Account.self, BudgetCategory.self, Entry.self, QuickEntry.self,
+                           configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+    }
+
+    private func makeStore() -> QuickEntryStore {
+        QuickEntryStore(defaults: UserDefaults(suiteName: "QuickEntryTests-\(UUID().uuidString)")!)
+    }
+
+    func testWidgetTapIsSavedOnceWithTheValuesItWasTappedWith() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let store = makeStore()
+        let bank = Account(name: "SMBC bank", kind: .bank)
+        let konbini = BudgetCategory(name: "Konbini", emoji: "🏪", kind: .expense, sortOrder: 0)
+        context.insert(bank)
+        context.insert(konbini)
+        let breakfast = QuickEntry(name: "Breakfast", emoji: "🥐", amount: 480, categoryID: konbini.id, merchant: "Lawson")
+        store.saveCards([breakfast.card])
+
+        let tappedAt = day(2026, 11, 9, hour: 8)
+        let tap = try XCTUnwrap(store.recordTap(cardID: breakfast.id, at: tappedAt))
+        // Editing the quick entry afterwards doesn't change the tap.
+        breakfast.amount = 999
+        store.saveCards([breakfast.card])
+        let pendingBeforeSaving = store.pending()
+
+        XCTAssertEqual(QuickEntries.savePendingTaps(into: context, store: store, defaultAccountID: bank.id), 1)
+        let entries = try context.fetch(FetchDescriptor<Entry>())
+        XCTAssertEqual(entries.count, 1)
+        let entry = try XCTUnwrap(entries.first)
+        XCTAssertEqual(entry.id, tap.id)
+        XCTAssertEqual(entry.kind, .expense)
+        XCTAssertEqual(entry.amount, 480)
+        XCTAssertEqual(entry.date, tappedAt)
+        XCTAssertEqual(entry.accountID, bank.id, "No account on the quick entry means the default account")
+        XCTAssertEqual(entry.categoryID, konbini.id)
+        XCTAssertEqual(entry.note, "Breakfast")
+        XCTAssertEqual(entry.merchant, "Lawson")
+        XCTAssertEqual(entry.quickEntryID, breakfast.id)
+        XCTAssertFalse(entry.needsReview)
+        XCTAssertTrue(store.pending().isEmpty)
+
+        // The same pending list arriving again doesn't double up.
+        store.savePending(pendingBeforeSaving)
+        XCTAssertEqual(QuickEntries.savePendingTaps(into: context, store: store, defaultAccountID: bank.id), 0)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<Entry>()).count, 1)
+        XCTAssertTrue(store.pending().isEmpty)
+    }
+
+    func testTapOnAnEntryThatIsNoLongerPublishedIsIgnored() {
+        let store = makeStore()
+        XCTAssertNil(store.recordTap(cardID: UUID()))
+        XCTAssertTrue(store.pending().isEmpty)
+    }
+
+    func testAccountFallsBackToDefaultOnlyWhenMissing() {
+        let bank = Account(name: "SMBC bank", kind: .bank)
+        let paypay = Account(name: "PayPay", kind: .topUp)
+        paypay.isArchived = true
+        var card = QuickEntryCard(id: UUID(), name: "Coffee", emoji: "☕️", amount: 390, categoryID: nil,
+                                  accountID: paypay.id, merchant: "", partnerShare: 0)
+        XCTAssertEqual(QuickEntries.accountID(for: card, accounts: [bank, paypay], defaultAccountID: bank.id), paypay.id,
+                       "An archived account still logs")
+        card.accountID = UUID()
+        XCTAssertEqual(QuickEntries.accountID(for: card, accounts: [bank, paypay], defaultAccountID: bank.id), bank.id,
+                       "A deleted account falls back to the default")
+    }
+
+    func testSplitQuickEntryCountsOnlyMyShare() {
+        let card = QuickEntryCard(id: UUID(), name: "Lunch for two", emoji: "🍱", amount: 1800, categoryID: nil,
+                                  accountID: nil, merchant: "", partnerShare: 900)
+        let entry = QuickEntries.makeEntry(from: card, at: Date(), accountID: nil)
+        XCTAssertEqual(entry.partnerShare, 900)
+        XCTAssertEqual(entry.myShare, 900)
+        XCTAssertTrue(entry.isSharedExpense)
+    }
+
+    func testTodayCountAddsUnsavedTapsAndResetsEachDay() throws {
+        let store = makeStore()
+        let calendar = Calendar.current
+        let now = day(2026, 11, 9, hour: 12)
+        let card = QuickEntryCard(id: UUID(), name: "Breakfast", emoji: "🥐", amount: 480, categoryID: nil,
+                                  accountID: nil, merchant: "", partnerShare: 0)
+        store.saveCards([card])
+
+        store.saveCounts([card.id: 2], day: calendar.startOfDay(for: now))
+        store.recordTap(cardID: card.id, at: now.addingTimeInterval(-60))
+        XCTAssertEqual(store.todayCount(for: card.id, now: now, calendar: calendar), 3)
+
+        let yesterday = try XCTUnwrap(calendar.date(byAdding: .day, value: -1, to: now))
+        store.saveCounts([card.id: 5], day: calendar.startOfDay(for: yesterday))
+        XCTAssertEqual(store.todayCount(for: card.id, now: now, calendar: calendar), 1, "Yesterday's count doesn't carry over")
+
+        let id = card.id
+        let today = Entry(kind: .expense, amount: 480, date: now)
+        today.quickEntryID = id
+        let earlier = Entry(kind: .expense, amount: 480, date: yesterday)
+        earlier.quickEntryID = id
+        let manual = Entry(kind: .expense, amount: 480, date: now)
+        XCTAssertEqual(QuickEntries.todayCounts(entries: [today, earlier, manual], now: now, calendar: calendar), [id: 1])
+    }
+
+    func testCheckmarkShowsBrieflyAfterATap() throws {
+        let store = makeStore()
+        let card = QuickEntryCard(id: UUID(), name: "Coffee", emoji: "☕️", amount: 390, categoryID: nil,
+                                  accountID: nil, merchant: "", partnerShare: 0)
+        store.saveCards([card])
+        let now = Date()
+        store.recordTap(cardID: card.id, at: now)
+        XCTAssertEqual(store.recentTap(now: now.addingTimeInterval(1))?.card.id, card.id)
+        XCTAssertNil(store.recentTap(now: now.addingTimeInterval(QuickEntryStore.flashSeconds + 1)))
+    }
+
+    func testSplitModeMatchesStoredShare() {
+        XCTAssertEqual(SplitMode.matching(share: 0, amount: 1000), SplitMode.none)
+        XCTAssertEqual(SplitMode.matching(share: 500, amount: 1000), .half)
+        XCTAssertEqual(SplitMode.matching(share: 1000, amount: 1000), .allHers)
+        XCTAssertEqual(SplitMode.matching(share: 300, amount: 1000), .custom)
+        XCTAssertEqual(SplitMode.custom.share(of: 1000, custom: 1500), 1000)
+    }
+
+    func testBackupKeepsQuickEntries() throws {
+        let defaults = UserDefaults(suiteName: "QuickEntryBackup-\(UUID().uuidString)")!
+        let source = try makeContainer()
+        let bank = Account(name: "SMBC bank", kind: .bank)
+        let konbini = BudgetCategory(name: "Konbini", emoji: "🏪", kind: .expense, sortOrder: 0)
+        let breakfast = QuickEntry(name: "Breakfast", emoji: "🥐", amount: 480, categoryID: konbini.id,
+                                   accountID: bank.id, merchant: "Lawson", partnerShare: 0, sortOrder: 3)
+        let logged = QuickEntries.makeEntry(from: breakfast.card, at: day(2026, 11, 9, hour: 8), accountID: bank.id)
+        source.mainContext.insert(bank)
+        source.mainContext.insert(konbini)
+        source.mainContext.insert(breakfast)
+        source.mainContext.insert(logged)
+        try source.mainContext.save()
+        let data = try Backup.exportData(context: source.mainContext, defaults: defaults)
+
+        let target = try makeContainer()
+        target.mainContext.insert(QuickEntry(name: "Old", emoji: "📦", amount: 100, categoryID: nil))
+        try Backup.restore(from: data, into: target.mainContext, defaults: defaults)
+        let restored = try target.mainContext.fetch(FetchDescriptor<QuickEntry>())
+        XCTAssertEqual(restored.count, 1, "A backup replaces the quick entries")
+        let quick = try XCTUnwrap(restored.first)
+        XCTAssertEqual(quick.id, breakfast.id)
+        XCTAssertEqual(quick.name, "Breakfast")
+        XCTAssertEqual(quick.emoji, "🥐")
+        XCTAssertEqual(quick.amount, 480)
+        XCTAssertEqual(quick.categoryID, konbini.id)
+        XCTAssertEqual(quick.accountID, bank.id)
+        XCTAssertEqual(quick.merchant, "Lawson")
+        XCTAssertEqual(quick.sortOrder, 3)
+        let entry = try XCTUnwrap(target.mainContext.fetch(FetchDescriptor<Entry>()).first)
+        XCTAssertEqual(entry.quickEntryID, breakfast.id)
+
+        // A backup made before quick entries existed leaves the current ones alone.
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        json.removeValue(forKey: "quickEntries")
+        let oldData = try JSONSerialization.data(withJSONObject: json)
+        let older = try makeContainer()
+        older.mainContext.insert(QuickEntry(name: "Kept", emoji: "📦", amount: 100, categoryID: nil))
+        try Backup.restore(from: oldData, into: older.mainContext, defaults: defaults)
+        XCTAssertEqual(try older.mainContext.fetch(FetchDescriptor<QuickEntry>()).map(\.name), ["Kept"])
+    }
+}
+
+final class AppGroupTests: XCTestCase {
+    /// A provisioning profile as iLoader embeds it: a signed envelope around an XML plist.
+    private func profile(groups: [String]) throws -> Data {
+        let plist: [String: Any] = [
+            "Name": "iOS Team Provisioning Profile: com.matisse.kakeibo.ABCDE12345",
+            "Entitlements": [
+                "application-identifier": "ABCDE12345.com.matisse.kakeibo.ABCDE12345",
+                "com.apple.security.application-groups": groups,
+            ],
+        ]
+        let xml = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+        return Data([0x30, 0x82, 0x3C, 0x00, 0x06, 0x09]) + xml + Data([0xA0, 0x82, 0x0B, 0x00, 0x3C, 0x3F])
+    }
+
+    func testReadsGroupsFromAnEmbeddedProfile() throws {
+        let data = try profile(groups: ["group.com.matisse.kakeibo.ABCDE12345"])
+        XCTAssertEqual(AppGroup.groups(inProvisioningProfile: data), ["group.com.matisse.kakeibo.ABCDE12345"])
+        XCTAssertEqual(AppGroup.groups(inProvisioningProfile: Data("not a profile".utf8)), [])
+    }
+
+    func testPrefersAltStoreThenProfileThenOurOwnName() {
+        let iLoader = "group.com.matisse.kakeibo.ABCDE12345"
+        XCTAssertEqual(AppGroup.resolve(altGroups: ["group.alt.kakeibo"], profileGroups: [iLoader]), "group.alt.kakeibo")
+        XCTAssertEqual(AppGroup.resolve(altGroups: nil, profileGroups: [iLoader]), iLoader)
+        XCTAssertEqual(AppGroup.resolve(altGroups: nil, profileGroups: ["group.other", iLoader]), iLoader,
+                       "Ours by name when the profile has several")
+        XCTAssertEqual(AppGroup.resolve(altGroups: nil, profileGroups: ["group.*"]), AppGroup.fallbackIdentifier)
+        XCTAssertEqual(AppGroup.resolve(altGroups: [], profileGroups: []), AppGroup.fallbackIdentifier)
+    }
+}

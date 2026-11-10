@@ -30,6 +30,7 @@ struct RootView: View {
     @Query(RootView.recentDescriptor) private var recentEntries: [Entry]
     @Query(sort: \BudgetCategory.sortOrder) private var categories: [BudgetCategory]
     @State private var showSetup = false
+    @State private var showQuickEntries = false
     @State private var tab: AppTab = .summary
     /// Set by the Balances widget's `kakeibo://account/<id>` link; the Accounts tab opens that account.
     @State private var openAccountID: UUID?
@@ -100,6 +101,11 @@ struct RootView: View {
             EntryEditorView(mode: .new, draft: draft)
                 .environment(toasts)
         }
+        .sheet(isPresented: $showQuickEntries) {
+            NavigationStack {
+                QuickEntriesView(showsDone: true)
+            }
+        }
         .fullScreenCover(isPresented: $showSetup) {
             OnboardingView {
                 setupDone = true
@@ -133,6 +139,9 @@ struct RootView: View {
             case "account":
                 tab = .accounts
                 openAccountID = UUID(uuidString: url.lastPathComponent)
+            case "quick-entries":
+                // The Quick entries widget with nothing set up yet.
+                showQuickEntries = true
             default:
                 break
             }

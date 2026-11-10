@@ -34,6 +34,7 @@ struct EntryEditorView: View {
     @Query(sort: \Account.sortOrder) private var accounts: [Account]
     @Query(sort: \BudgetCategory.sortOrder) private var categories: [BudgetCategory]
     @Query(sort: \Entry.date, order: .reverse) private var entries: [Entry]
+    @Query(sort: \QuickEntry.sortOrder) private var storedQuickEntries: [QuickEntry]
     @AppStorage(SettingsKey.defaultAccountID) private var defaultAccountID = ""
     @AppStorage(SettingsKey.partnerName) private var partnerName = SettingsKey.defaultPartnerName
     @AppStorage(SettingsKey.suggestCategory) private var suggests = true
@@ -60,6 +61,9 @@ struct EntryEditorView: View {
     @State private var confirmDelete = false
     @State private var pickingDate = false
     @State private var pickingCategory = false
+    /// The quick entry whose chip filled in the form; saved on the entry for the widget's count.
+    @State private var quickEntryID: UUID?
+    @State private var savingAsQuickEntry = false
     @Environment(SavedToastCenter.self) private var toasts: SavedToastCenter?
 
     private var editing: Entry? {
@@ -86,6 +90,12 @@ struct EntryEditorView: View {
 
     private var allCategories: [BudgetCategory] {
         categories.filter { $0.kind == categoryKind && (!$0.isArchived || $0.id == categoryID) }
+    }
+
+    /// Quick-entry chips, on a new expense only.
+    private var quickEntries: [QuickEntry] {
+        guard editing == nil, kind == .expense else { return [] }
+        return QuickEntries.sorted(storedQuickEntries)
     }
 
     private var partnerShare: Int {
@@ -167,6 +177,11 @@ struct EntryEditorView: View {
         .sheet(isPresented: $pickingCategory) {
             CategoryPickerSheet(categories: allCategories, selection: $categoryID)
         }
+        .sheet(isPresented: $savingAsQuickEntry) {
+            if let entry = editing {
+                QuickEntryEditView(draft: QuickEntryDraft(entry: entry, categories: categories))
+            }
+        }
         .confirmationDialog("Delete this entry?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive, action: deleteEntry)
         }
@@ -178,6 +193,7 @@ struct EntryEditorView: View {
         .sensoryFeedback(.firmSelection, trigger: accountID) { _, _ in ready }
         .sensoryFeedback(.firmSelection, trigger: toAccountID) { _, _ in ready }
         .sensoryFeedback(.firmSelection, trigger: categoryID) { _, _ in ready }
+        .sensoryFeedback(.firmSelection, trigger: quickEntryID) { _, new in ready && new != nil }
         .sensoryFeedback(.firmSelection, trigger: Calendar.kakeibo.startOfDay(for: date)) { _, _ in ready }
     }
 
@@ -223,6 +239,13 @@ struct EntryEditorView: View {
                     swapAccounts()
                 } label: {
                     Label("Swap accounts", systemImage: "arrow.up.arrow.down")
+                }
+            }
+            if let entry = editing, entry.kind == .expense, !entry.isRefund {
+                Button {
+                    savingAsQuickEntry = true
+                } label: {
+                    Label("Save as Quick Entry…", systemImage: "bolt")
                 }
             }
             if editing != nil {
@@ -309,6 +332,10 @@ struct EntryEditorView: View {
                 chips
                     .padding(.top, 14)
             } else {
+                if !quickEntries.isEmpty {
+                    quickEntryChips
+                        .padding(.top, 10)
+                }
                 chips
                     .padding(.top, 10)
                 if kind == .expense && split == .custom && !isRefund {
@@ -390,6 +417,24 @@ struct EntryEditorView: View {
         .frame(height: 44)
         .background(RoundedRectangle(cornerRadius: Metrics.sheetGroupRadius, style: .continuous).fill(Palette.sheetRow))
         .padding(.horizontal, 4)
+    }
+
+    /// Your quick entries. A tap fills in amount, category, account, split and note; then Save.
+    private var quickEntryChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(quickEntries) { item in
+                    Button {
+                        apply(item)
+                    } label: {
+                        QuickEntryChip(quickEntry: item, selected: item.id == quickEntryID)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+        .padding(.horizontal, -12)
     }
 
     private var accountChips: some View {
@@ -561,16 +606,8 @@ struct EntryEditorView: View {
             installmentCount = entry.installmentCount
             installmentMode = entry.installmentMode
             installmentFee = entry.installmentFeeOverride
-            if entry.partnerShare == 0 {
-                split = .none
-            } else if entry.partnerShare == entry.amount {
-                split = .allHers
-            } else if entry.partnerShare == entry.amount / 2 {
-                split = .half
-            } else {
-                split = .custom
-                customShare = entry.partnerShare
-            }
+            split = SplitMode.matching(share: entry.partnerShare, amount: entry.amount)
+            if split == .custom { customShare = entry.partnerShare }
             return
         }
         let start = draft ?? EntryDraft()
@@ -587,6 +624,23 @@ struct EntryEditorView: View {
             accountID = start.accountID ?? suggestedAccount(for: start.kind, category: categoryID)
         }
         if DemoMode.isOn && draft == nil { amount = 980 }
+    }
+
+    /// Fills the form from a quick entry. The date stays as it is.
+    private func apply(_ item: QuickEntry) {
+        let card = item.card
+        amount = card.amount
+        categoryID = card.categoryID
+        if let id = QuickEntries.accountID(for: card, accounts: accounts, defaultAccountID: UUID(uuidString: defaultAccountID)) {
+            accountID = id
+        }
+        note = card.name
+        merchant = card.merchant
+        isRefund = false
+        installmentCount = 0
+        split = SplitMode.matching(share: card.partnerShare, amount: card.amount)
+        customShare = card.partnerShare
+        quickEntryID = card.id
     }
 
     private func kindChanged(to newKind: EntryKind) {
@@ -634,7 +688,10 @@ struct EntryEditorView: View {
             entry.installmentFeeOverride = installments ? installmentFee : -1
             if !installments { entry.installmentPaidOffAt = nil }
         }
-        if isNew { context.insert(entry) }
+        if isNew {
+            if kind == .expense { entry.quickEntryID = quickEntryID }
+            context.insert(entry)
+        }
         context.saveAndRefresh()
         let limitNote = limitCrossing(entry)
         if endsOverBudget(entry) || limitNote != nil {
@@ -751,6 +808,33 @@ struct AccountChip: View {
         .background(Capsule().fill(selected ? Palette.accentTint.opacity(0.24) : Palette.chipFill))
         .overlay(Capsule().strokeBorder(selected ? Palette.accentTint : Color.clear, lineWidth: 1.5))
         .accessibilityAddTraits(selected ? [.isSelected] : [])
+    }
+}
+
+/// A quick entry in the add sheet: its emoji, name and amount; ringed in indigo once used.
+struct QuickEntryChip: View {
+    let quickEntry: QuickEntry
+    let selected: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(quickEntry.emoji)
+            Text(quickEntry.name)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(Palette.textPrimary)
+                .lineLimit(1)
+            Text(Yen.format(quickEntry.amount))
+                .font(.subheadline)
+                .foregroundStyle(Palette.textSecondary)
+                .monospacedDigit()
+        }
+        .padding(.horizontal, 13)
+        .frame(height: 36)
+        .background(Capsule().fill(selected ? Palette.accentTint.opacity(0.24) : Palette.chipFill))
+        .overlay(Capsule().strokeBorder(selected ? Palette.accentTint : Color.clear, lineWidth: 1.5))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Quick entry \(quickEntry.name), \(Yen.format(quickEntry.amount))")
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : [.isButton])
     }
 }
 

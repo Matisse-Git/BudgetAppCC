@@ -8,6 +8,7 @@ struct KakeiboWidgetBundle: WidgetBundle {
         SummaryWidget()
         NextBillWidget()
         BalancesWidget()
+        QuickEntriesWidget()
         AddEntryControl()
     }
 }
@@ -259,6 +260,165 @@ struct NextBillWidget: Widget {
         .configurationDisplayName("Next card bill")
         .description("The next card payment and whether the paying account covers it.")
         .supportedFamilies([.systemSmall])
+    }
+}
+
+// MARK: Quick entries widget (Home Screen and the swipe-right Today View)
+
+struct QuickEntriesEntry: TimelineEntry {
+    struct Item: Identifiable {
+        let card: QuickEntryCard
+        let todayCount: Int
+        var id: UUID { card.id }
+    }
+
+    let date: Date
+    let items: [Item]
+    /// The button that was just tapped, shown with a ✓.
+    let flashID: UUID?
+}
+
+struct QuickEntriesProvider: TimelineProvider {
+    private static let sample: [QuickEntriesEntry.Item] = [
+        ("Breakfast", "🥐", 480), ("Coffee", "☕️", 390), ("Lunch", "🍱", 900), ("Bus", "🚌", 230),
+    ].map { name, emoji, amount in
+        QuickEntriesEntry.Item(
+            card: QuickEntryCard(id: UUID(), name: name, emoji: emoji, amount: amount, categoryID: nil,
+                                 accountID: nil, merchant: "", partnerShare: 0),
+            todayCount: 0
+        )
+    }
+
+    func placeholder(in context: Context) -> QuickEntriesEntry {
+        QuickEntriesEntry(date: Date(), items: Self.sample, flashID: nil)
+    }
+
+    func getSnapshot(in context: Context, completion: @escaping (QuickEntriesEntry) -> Void) {
+        let entry = load(now: Date(), flash: false)
+        completion(context.isPreview && entry.items.isEmpty ? placeholder(in: context) : entry)
+    }
+
+    func getTimeline(in context: Context, completion: @escaping (Timeline<QuickEntriesEntry>) -> Void) {
+        let now = Date()
+        let store = QuickEntryStore.shared
+        var entries = [load(now: now, flash: true)]
+        // Drop the ✓ shortly after a tap.
+        if let tap = store.recentTap(now: now) {
+            entries.append(load(now: tap.tappedAt.addingTimeInterval(QuickEntryStore.flashSeconds), flash: false))
+        }
+        // "today ×N" starts again at midnight.
+        let midnight = Calendar.current.startOfDay(for: now).addingTimeInterval(86_400 + 60)
+        completion(Timeline(entries: entries, policy: .after(midnight)))
+    }
+
+    private func load(now: Date, flash: Bool) -> QuickEntriesEntry {
+        let store = QuickEntryStore.shared
+        let items = store.cards().map {
+            QuickEntriesEntry.Item(card: $0, todayCount: store.todayCount(for: $0.id, now: now))
+        }
+        return QuickEntriesEntry(date: now, items: items, flashID: flash ? store.recentTap(now: now)?.card.id : nil)
+    }
+}
+
+struct QuickEntriesWidgetView: View {
+    @Environment(\.widgetFamily) private var family
+    let entry: QuickEntriesEntry
+
+    private var slots: Int {
+        switch family {
+        case .systemSmall: return 2
+        case .systemMedium: return 4
+        default: return 8
+        }
+    }
+
+    private var columns: Int { family == .systemSmall ? 1 : 2 }
+
+    var body: some View {
+        if entry.items.isEmpty {
+            VStack(spacing: 6) {
+                Image(systemName: "bolt.circle")
+                    .font(.title2)
+                    .foregroundStyle(Palette.accentTint)
+                Text("Add quick entries in Kakeibo")
+                    .font(.caption)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(Palette.textSecondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            let shown = Array(entry.items.prefix(slots))
+            let rows = slots / columns
+            Grid(horizontalSpacing: 8, verticalSpacing: 8) {
+                ForEach(0..<rows, id: \.self) { row in
+                    GridRow {
+                        ForEach(0..<columns, id: \.self) { column in
+                            let index = row * columns + column
+                            if index < shown.count {
+                                button(shown[index])
+                            } else {
+                                Color.clear
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func button(_ item: QuickEntriesEntry.Item) -> some View {
+        let flashing = item.id == entry.flashID
+        return Button(intent: LogQuickEntryFromWidgetIntent(quickEntryID: item.id)) {
+            HStack(spacing: 6) {
+                Text(flashing ? "✓" : item.card.emoji)
+                    .font(.title3)
+                    .foregroundStyle(Palette.positive)
+                    .frame(minWidth: 24)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(item.card.name)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Palette.textPrimary)
+                        .lineLimit(1)
+                    HStack(spacing: 4) {
+                        Text(flashing ? "Logged" : Yen.format(item.card.amount))
+                            .monospacedDigit()
+                            .foregroundStyle(flashing ? Palette.positive : Palette.textSecondary)
+                        if item.todayCount > 0 && !flashing {
+                            Text("today ×\(item.todayCount)")
+                                .foregroundStyle(Palette.accentTint)
+                        }
+                    }
+                    .font(.caption2)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(flashing ? Palette.positive.opacity(0.2) : Palette.chipFill)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Log \(item.card.name), \(Yen.format(item.card.amount))")
+    }
+}
+
+struct QuickEntriesWidget: Widget {
+    let kind = "KakeiboQuickEntries"
+
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: kind, provider: QuickEntriesProvider()) { entry in
+            QuickEntriesWidgetView(entry: entry)
+                .containerBackground(Palette.card, for: .widget)
+                .widgetURL(URL(string: "kakeibo://quick-entries"))
+        }
+        .configurationDisplayName("Quick entries")
+        .description("Log your usual purchases in one tap. Set them up in Kakeibo → Settings → Quick entries.")
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }
 }
 

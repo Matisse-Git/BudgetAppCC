@@ -44,6 +44,7 @@ shoot 06c-card-setup card-setup
 shoot 07-partner partner
 shoot 08-review review
 shoot 09-categories categories
+shoot 09b-quick-entries quick-entries
 shoot 10-setup setup
 xcrun simctl ui "$UDID" appearance dark
 shoot 12-home-dark home

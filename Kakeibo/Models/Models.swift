@@ -241,6 +241,8 @@ final class Entry {
     var installmentFeeOverride: Int = -1
     /// Set by "Pay off the rest": installments not yet billed move to the bill open on this date.
     var installmentPaidOffAt: Date? = nil
+    /// The quick entry this was logged from, for the widget's "today ×N" count.
+    var quickEntryID: UUID? = nil
 
     init(kind: EntryKind, amount: Int, date: Date = Date(), accountID: UUID? = nil, toAccountID: UUID? = nil, categoryID: UUID? = nil) {
         self.id = UUID()
@@ -297,5 +299,45 @@ enum InstallmentMode: String, Codable, CaseIterable, Identifiable {
         case .monthly: return "Each installment counts in the month it's paid."
         case .debt: return "Never counts toward budgets; only lowers net worth until it's paid."
         }
+    }
+}
+
+/// A purchase that's always the same (daily breakfast), logged in one tap from the add screen,
+/// the Quick entries widget or Shortcuts. Expenses only.
+@Model
+final class QuickEntry {
+    var id: UUID = UUID()
+    var name: String = ""
+    var emoji: String = "⭐️"
+    var amount: Int = 0
+    var categoryID: UUID? = nil
+    /// Nil means "use the default account".
+    var accountID: UUID? = nil
+    var merchant: String = ""
+    /// Part of the amount owed back by my partner.
+    var partnerShare: Int = 0
+    var sortOrder: Int = 0
+    var createdAt: Date = Date()
+
+    init(name: String, emoji: String, amount: Int, categoryID: UUID?, accountID: UUID? = nil,
+         merchant: String = "", partnerShare: Int = 0, sortOrder: Int = 0) {
+        self.id = UUID()
+        self.name = name
+        self.emoji = emoji
+        self.amount = amount
+        self.categoryID = categoryID
+        self.accountID = accountID
+        self.merchant = merchant
+        self.partnerShare = partnerShare
+        self.sortOrder = sortOrder
+        self.createdAt = Date()
+    }
+
+    var displayName: String { "\(emoji) \(name)" }
+
+    /// The copy the widget and pending taps carry.
+    var card: QuickEntryCard {
+        QuickEntryCard(id: id, name: name, emoji: emoji, amount: amount, categoryID: categoryID,
+                       accountID: accountID, merchant: merchant, partnerShare: partnerShare)
     }
 }

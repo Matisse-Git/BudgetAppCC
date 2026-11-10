@@ -124,7 +124,7 @@ Tabs: Summary `house`, Activity `list.bullet`, Budgets `chart.pie`, Accounts `cr
 100%), `StatusChip`, `AutoBadge`, `PillButtonStyle` (`.pill`, `.pillSecondary`), `UndoToast`,
 `GlassBackground` (glass on iOS 26, material before). `TabBar.swift`: `AppTab`, `AddEntryButton` (the + in
 navigation bars, fed by the `quickAdd` environment value). Elsewhere: `TransactionRow` and
-`EntryPresentation` (how an entry reads), `InfoRow`, `TimelineStep`, `CardFace`, `KeypadView`, `ActionTile`,
+`EntryPresentation` (how an entry reads), `QuickEntryChip` (Quick Add), `InfoRow`, `TimelineStep`, `CardFace`, `KeypadView`, `ActionTile`,
 `FilterChip`, `LimitUsageCard`. Yen inputs use `YenField` (never `TextField(value:format:)`, which only
 commits on Return and the number pad has none). Long lists that need swipe actions use an inset-grouped `List` with `.listRowInsets(EdgeInsets())`
 and `Palette.card` row backgrounds; links without a chevron use a hidden `NavigationLink` in `.background`.

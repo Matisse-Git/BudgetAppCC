@@ -11,6 +11,8 @@ enum Backup {
         var accounts: [AccountRecord]
         var categories: [CategoryRecord]
         var entries: [EntryRecord]
+        /// Missing in backups made before quick entries existed.
+        var quickEntries: [QuickEntryRecord]?
     }
 
     struct AccountRecord: Codable {
@@ -115,6 +117,8 @@ enum Backup {
         var installmentModeRaw: String?
         var installmentFeeOverride: Int?
         var installmentPaidOffAt: Date?
+        // Added with quick entries.
+        var quickEntryID: UUID?
 
         init(_ e: Entry) {
             id = e.id; kindRaw = e.kindRaw; amount = e.amount; date = e.date; note = e.note; merchant = e.merchant
@@ -124,6 +128,7 @@ enum Backup {
             currencyCode = e.currencyCode; createdAt = e.createdAt
             installmentCount = e.installmentCount; installmentModeRaw = e.installmentModeRaw
             installmentFeeOverride = e.installmentFeeOverride; installmentPaidOffAt = e.installmentPaidOffAt
+            quickEntryID = e.quickEntryID
         }
 
         func make() -> Entry {
@@ -136,7 +141,34 @@ enum Backup {
             e.installmentModeRaw = installmentModeRaw ?? InstallmentMode.monthly.rawValue
             e.installmentFeeOverride = installmentFeeOverride ?? -1
             e.installmentPaidOffAt = installmentPaidOffAt
+            e.quickEntryID = quickEntryID
             return e
+        }
+    }
+
+    struct QuickEntryRecord: Codable {
+        var id: UUID
+        var name: String
+        var emoji: String
+        var amount: Int
+        var categoryID: UUID?
+        var accountID: UUID?
+        var merchant: String
+        var partnerShare: Int
+        var sortOrder: Int
+        var createdAt: Date
+
+        init(_ q: QuickEntry) {
+            id = q.id; name = q.name; emoji = q.emoji; amount = q.amount; categoryID = q.categoryID
+            accountID = q.accountID; merchant = q.merchant; partnerShare = q.partnerShare
+            sortOrder = q.sortOrder; createdAt = q.createdAt
+        }
+
+        func make() -> QuickEntry {
+            let q = QuickEntry(name: name, emoji: emoji, amount: amount, categoryID: categoryID, accountID: accountID,
+                               merchant: merchant, partnerShare: partnerShare, sortOrder: sortOrder)
+            q.id = id; q.createdAt = createdAt
+            return q
         }
     }
 
@@ -158,24 +190,30 @@ enum Backup {
     }
 
     @MainActor
-    static func exportJSON(context: ModelContext) throws -> URL {
+    static func exportData(context: ModelContext, defaults: UserDefaults = .standard) throws -> Data {
         let file = File(
-            version: 1,
+            version: 2,
             exportedAt: Date(),
-            defaultAccountID: UserDefaults.standard.string(forKey: SettingsKey.defaultAccountID),
-            partnerName: UserDefaults.standard.string(forKey: SettingsKey.partnerName),
+            defaultAccountID: defaults.string(forKey: SettingsKey.defaultAccountID),
+            partnerName: defaults.string(forKey: SettingsKey.partnerName),
             accounts: try context.fetch(FetchDescriptor<Account>()).map { AccountRecord($0) },
             categories: try context.fetch(FetchDescriptor<BudgetCategory>()).map { CategoryRecord($0) },
-            entries: try context.fetch(FetchDescriptor<Entry>()).map { EntryRecord($0) }
+            entries: try context.fetch(FetchDescriptor<Entry>()).map { EntryRecord($0) },
+            quickEntries: try context.fetch(FetchDescriptor<QuickEntry>()).map { QuickEntryRecord($0) }
         )
+        return try encoder.encode(file)
+    }
+
+    @MainActor
+    static func exportJSON(context: ModelContext) throws -> URL {
         let url = FileManager.default.temporaryDirectory.appending(path: "Kakeibo-backup-\(stamp).json")
-        try encoder.encode(file).write(to: url, options: .atomic)
+        try exportData(context: context).write(to: url, options: .atomic)
         return url
     }
 
     /// Replaces all data with the backup.
     @MainActor
-    static func restore(from data: Data, into context: ModelContext) throws {
+    static func restore(from data: Data, into context: ModelContext, defaults: UserDefaults = .standard) throws {
         let file = try decoder.decode(File.self, from: data)
         try context.delete(model: Entry.self)
         try context.delete(model: Account.self)
@@ -183,11 +221,17 @@ enum Backup {
         file.accounts.forEach { context.insert($0.make()) }
         file.categories.forEach { context.insert($0.make()) }
         file.entries.forEach { context.insert($0.make()) }
+        // A backup from before quick entries existed leaves the current ones alone.
+        if let quickEntries = file.quickEntries {
+            // One by one rather than a batch delete, which skips records inserted but not yet saved.
+            try context.fetch(FetchDescriptor<QuickEntry>()).forEach { context.delete($0) }
+            quickEntries.forEach { context.insert($0.make()) }
+        }
         try context.save()
-        if let id = file.defaultAccountID { UserDefaults.standard.set(id, forKey: SettingsKey.defaultAccountID) }
-        if let name = file.partnerName { UserDefaults.standard.set(name, forKey: SettingsKey.partnerName) }
-        UserDefaults.standard.set(true, forKey: SettingsKey.seeded)
-        UserDefaults.standard.set(true, forKey: SettingsKey.setupDone)
+        if let id = file.defaultAccountID { defaults.set(id, forKey: SettingsKey.defaultAccountID) }
+        if let name = file.partnerName { defaults.set(name, forKey: SettingsKey.partnerName) }
+        defaults.set(true, forKey: SettingsKey.seeded)
+        defaults.set(true, forKey: SettingsKey.setupDone)
     }
 
     @MainActor
