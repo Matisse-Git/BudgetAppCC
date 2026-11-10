@@ -10,6 +10,9 @@ struct AccountsView: View {
     @State private var creatingKind: AccountKind?
     @State private var creatingCard = false
     @State private var reordering = false
+    /// An account to open straight away (a widget link). Cleared once it has been opened.
+    var openAccountID: Binding<UUID?> = .constant(nil)
+    @State private var linked: Account?
 
     var body: some View {
         let now = Date()
@@ -90,6 +93,14 @@ struct AccountsView: View {
             }
             .kScreenBackground()
             .navigationTitle("Accounts")
+            .navigationDestination(item: $linked) { account in
+                AccountDetailView(account: account)
+            }
+            .onChange(of: openAccountID.wrappedValue, initial: true) { _, id in
+                guard let id else { return }
+                linked = accounts.first { $0.id == id }
+                openAccountID.wrappedValue = nil
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Edit") { reordering = true }

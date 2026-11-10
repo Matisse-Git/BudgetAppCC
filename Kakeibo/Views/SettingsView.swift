@@ -19,6 +19,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKey.shortfallWarnings) private var shortfallWarnings = true
     @AppStorage(SettingsKey.faceIDLock) private var faceIDLock = false
     @AppStorage(SettingsKey.hideInSwitcher) private var hideInSwitcher = true
+    @AppStorage(SettingsKey.hideWidgetAmounts) private var hideWidgetAmounts = false
     @AppStorage(SettingsKey.lastBackup) private var lastBackup: Double = 0
 
     @State private var reorderingAccounts = false
@@ -145,6 +146,7 @@ struct SettingsView: View {
             Section {
                 Toggle("Lock with Face ID", isOn: $faceIDLock)
                 Toggle("Hide amounts in app switcher", isOn: $hideInSwitcher)
+                Toggle("Hide widget amounts when locked", isOn: $hideWidgetAmounts)
                 Button {
                     exportBackup()
                 } label: {
@@ -182,6 +184,7 @@ struct SettingsView: View {
         .onChange(of: eveningMinutes) { _, _ in BillNotifications.scheduleEveningReminder() }
         .onChange(of: billReminders) { _, _ in Maintenance.run(context, autoPayoffs: false) }
         .onChange(of: shortfallWarnings) { _, _ in Maintenance.run(context, autoPayoffs: false) }
+        .onChange(of: hideWidgetAmounts) { _, _ in Maintenance.run(context, autoPayoffs: false) }
         .sensoryFeedback(.firmSelection, trigger: suggests)
         .sensoryFeedback(.firmSelection, trigger: keypadHaptics)
         .sensoryFeedback(.firmSelection, trigger: eveningReminder)
@@ -189,6 +192,7 @@ struct SettingsView: View {
         .sensoryFeedback(.firmSelection, trigger: shortfallWarnings)
         .sensoryFeedback(.firmSelection, trigger: faceIDLock)
         .sensoryFeedback(.firmSelection, trigger: hideInSwitcher)
+        .sensoryFeedback(.firmSelection, trigger: hideWidgetAmounts)
         .sheet(isPresented: $reorderingAccounts) {
             ReorderAccountsView()
         }

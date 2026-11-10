@@ -843,3 +843,66 @@ final class AccountLayoutTests: XCTestCase {
         XCTAssertEqual(AccountLayout.sorted([second, first]).map(\.name), ["First", "Second"])
     }
 }
+
+final class WidgetAccountsTests: XCTestCase {
+    private func snapshot(_ id: String, archived: Bool = false) -> AccountSnapshot {
+        AccountSnapshot(id: id, name: id, symbol: "banknote.fill", colorKey: "tan", isCredit: false, amount: 0, isArchived: archived)
+    }
+
+    func testSnapshotsListBalanceAccountsInAppOrderWithCardDebtPositive() {
+        let bank = Account(name: "Bank", kind: .bank, openingBalance: 10_000, sortOrder: 2)
+        let card = Account(name: "Card", kind: .credit, openingBalance: -5_000, sortOrder: 0)
+        let overdrawn = Account(name: "Wallet", kind: .cash, openingBalance: -300, sortOrder: 1)
+        let pasmo = Account(name: "PASMO", kind: .topUp, sortOrder: 3)
+        pasmo.countsTopUpAsSpending = true
+        let old = Account(name: "Old", kind: .bank, openingBalance: 1, sortOrder: 4)
+        old.isArchived = true
+        let entries = [Entry(kind: .expense, amount: 1_000, date: Date(timeIntervalSince1970: 100), accountID: card.id)]
+        let ledger = Ledger(accounts: [bank, card, overdrawn, pasmo, old], entries: entries)
+
+        let result = WidgetAccounts.snapshots(ledger: ledger, now: Date(timeIntervalSince1970: 200))
+
+        XCTAssertEqual(result.map(\.name), ["Card", "Wallet", "Bank", "Old"])
+        XCTAssertEqual(result.map(\.amount), [6_000, -300, 10_000, 1])
+        XCTAssertEqual(result.map(\.isCredit), [true, false, false, false])
+        XCTAssertEqual(result.map(\.isArchived), [false, false, false, true])
+        XCTAssertEqual(result[0].id, card.id.uuidString)
+        XCTAssertEqual(result[2].symbol, "building.columns.fill")
+    }
+
+    func testCardInCreditShowsNothingOwed() {
+        let card = Account(name: "Card", kind: .credit, openingBalance: 2_000)
+        XCTAssertEqual(WidgetAccounts.snapshots(ledger: Ledger(accounts: [card], entries: [])).first?.amount, 0)
+    }
+
+    func testUneditedWidgetShowsFirstFourActiveAccounts() {
+        let all = [snapshot("a"), snapshot("b", archived: true), snapshot("c"), snapshot("d"), snapshot("e"), snapshot("f")]
+        XCTAssertEqual(BalanceSelection.resolve(chosen: nil, from: all).map(\.id), ["a", "c", "d", "e"])
+        XCTAssertEqual(BalanceSelection.resolve(chosen: nil, from: [snapshot("a")]).map(\.id), ["a"])
+    }
+
+    func testChosenAccountsKeepTheirOrderAndNewAccountsStayOut() {
+        let all = [snapshot("a"), snapshot("b"), snapshot("c"), snapshot("new")]
+        XCTAssertEqual(BalanceSelection.resolve(chosen: ["c", "a"], from: all).map(\.id), ["c", "a"])
+        XCTAssertEqual(BalanceSelection.resolve(chosen: [], from: all), [])
+    }
+
+    func testArchivedAndDeletedAccountsDropOutWithoutBeingReplaced() {
+        let all = [snapshot("a"), snapshot("b", archived: true), snapshot("c")]
+        XCTAssertEqual(BalanceSelection.resolve(chosen: ["b", "gone", "a"], from: all).map(\.id), ["a"])
+        // Unarchived: it's back in its place.
+        XCTAssertEqual(BalanceSelection.resolve(chosen: ["b", "gone", "a"], from: [snapshot("a"), snapshot("b")]).map(\.id), ["b", "a"])
+    }
+
+    func testAtMostFourAndNoRepeats() {
+        let all = ["a", "b", "c", "d", "e"].map { snapshot($0) }
+        XCTAssertEqual(BalanceSelection.resolve(chosen: ["e", "e", "d", "c", "b", "a"], from: all).map(\.id), ["e", "d", "c", "b"])
+    }
+
+    func testSnapshotWrittenBeforeBalancesStillDecodes() throws {
+        let old = #"{"monthTitle":"May","spent":1,"budget":2,"partnerOwed":0,"updatedAt":0}"#
+        let decoded = try JSONDecoder().decode(WidgetSnapshot.self, from: Data(old.utf8))
+        XCTAssertNil(decoded.accounts)
+        XCTAssertNil(decoded.hideWhenLocked)
+    }
+}

@@ -71,6 +71,41 @@ struct NextBillSnapshot: Codable {
     var shortfall: Int
 }
 
+/// One account as the Balances widget shows it. The widget can't open the database, so the app writes
+/// every account that tracks a balance here, in the app's account order.
+struct AccountSnapshot: Codable, Equatable, Identifiable {
+    /// The account's UUID string.
+    var id: String
+    var name: String
+    /// SF Symbol for bank, prepaid and cash accounts.
+    var symbol: String
+    /// `Hue` raw value, or `CardColor` raw value for a credit card.
+    var colorKey: String
+    var isCredit: Bool
+    /// The balance, or for a credit card what is owed as a positive number.
+    var amount: Int
+    /// Archived accounts stay listed so a widget that chose one shows it again once it's unarchived.
+    var isArchived: Bool = false
+}
+
+/// Which accounts a Balances widget shows.
+enum BalanceSelection {
+    static let limit = 4
+
+    /// `chosen` is the widget's own list of account IDs in its own order; nil means the widget was never
+    /// edited, which shows the first four accounts. Archived and deleted accounts drop out without
+    /// another account taking their place.
+    static func resolve(chosen: [String]?, from accounts: [AccountSnapshot]) -> [AccountSnapshot] {
+        let active = accounts.filter { !$0.isArchived }
+        guard let chosen else { return Array(active.prefix(limit)) }
+        var seen = Set<String>()
+        let picked = chosen.compactMap { id in
+            seen.insert(id).inserted ? active.first { $0.id == id } : nil
+        }
+        return Array(picked.prefix(limit))
+    }
+}
+
 /// Small summary the app writes for the widget. Fields added later are optional so an older snapshot
 /// still decodes.
 struct WidgetSnapshot: Codable {
@@ -87,6 +122,10 @@ struct WidgetSnapshot: Codable {
     /// The category that most needs a look, e.g. "Dining Out ¥1,800 over".
     var alert: String? = nil
     var nextBill: NextBillSnapshot? = nil
+    /// Accounts for the Balances widget.
+    var accounts: [AccountSnapshot]? = nil
+    /// Settings → "Hide widget amounts when locked".
+    var hideWhenLocked: Bool? = nil
 
     static let key = "widgetSnapshot"
 
@@ -94,7 +133,13 @@ struct WidgetSnapshot: Codable {
         monthTitle: "November", spent: 74_820, budget: 130_000, partnerOwed: 0, updatedAt: Date(),
         daysElapsed: 18, daysInMonth: 30, perDay: 4_600, paceStatus: "onTrack", alert: "Dining Out ¥1,800 over",
         nextBill: NextBillSnapshot(cardName: "Everyday Card", colorKey: "blue", amount: 86_420,
-                                   dueDate: Date().addingTimeInterval(9 * 86_400), payerName: "Main Bank", shortfall: 0)
+                                   dueDate: Date().addingTimeInterval(9 * 86_400), payerName: "Main Bank", shortfall: 0),
+        accounts: [
+            AccountSnapshot(id: "bank", name: "Main Bank", symbol: "building.columns.fill", colorKey: "blue", isCredit: false, amount: 416_610),
+            AccountSnapshot(id: "card", name: "Everyday Card", symbol: "creditcard.fill", colorKey: "blue", isCredit: true, amount: 86_420),
+            AccountSnapshot(id: "ic", name: "Suica", symbol: "wave.3.right", colorKey: "green", isCredit: false, amount: 3_240),
+            AccountSnapshot(id: "cash", name: "Cash", symbol: "banknote.fill", colorKey: "tan", isCredit: false, amount: 12_000),
+        ]
     )
 
     var left: Int { budget - spent }

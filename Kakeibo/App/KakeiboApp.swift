@@ -31,6 +31,8 @@ struct RootView: View {
     @Query(sort: \BudgetCategory.sortOrder) private var categories: [BudgetCategory]
     @State private var showSetup = false
     @State private var tab: AppTab = .summary
+    /// Set by the Balances widget's `kakeibo://account/<id>` link; the Accounts tab opens that account.
+    @State private var openAccountID: UUID?
     @AppStorage(SettingsKey.faceIDLock) private var faceIDLock = false
     @AppStorage(SettingsKey.hideInSwitcher) private var hideInSwitcher = true
     @State private var locked = UserDefaults.standard.bool(forKey: SettingsKey.faceIDLock)
@@ -123,7 +125,17 @@ struct RootView: View {
             if !done { showSetup = true }
         }
         .onOpenURL { url in
-            if url.host == "add" { addDraft = EntryDraft() }
+            switch url.host {
+            case "add":
+                addDraft = EntryDraft()
+            case "accounts":
+                tab = .accounts
+            case "account":
+                tab = .accounts
+                openAccountID = UUID(uuidString: url.lastPathComponent)
+            default:
+                break
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: PendingAction.notification)) { _ in
             if PendingAction.consumeAdd() { addDraft = EntryDraft() }
@@ -176,7 +188,7 @@ struct RootView: View {
         case .summary: SummaryView(tab: $tab)
         case .activity: TransactionsView()
         case .budgets: BudgetsView()
-        case .accounts: AccountsView()
+        case .accounts: AccountsView(openAccountID: $openAccountID)
         }
     }
 

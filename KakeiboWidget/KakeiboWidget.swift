@@ -7,6 +7,7 @@ struct KakeiboWidgetBundle: WidgetBundle {
     var body: some Widget {
         SummaryWidget()
         NextBillWidget()
+        BalancesWidget()
         AddEntryControl()
     }
 }
@@ -175,6 +176,7 @@ struct SummaryWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: SummaryProvider()) { entry in
             SummaryWidgetView(entry: entry)
+                .privacySensitive(entry.snapshot?.hideWhenLocked == true)
                 .containerBackground(Palette.card, for: .widget)
                 .widgetURL(URL(string: "kakeibo://add"))
         }
@@ -250,6 +252,7 @@ struct NextBillWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: SummaryProvider()) { entry in
             NextBillWidgetView(entry: entry)
+                .privacySensitive(entry.snapshot?.hideWhenLocked == true)
                 .containerBackground(Palette.card, for: .widget)
                 .widgetURL(URL(string: "kakeibo://add"))
         }

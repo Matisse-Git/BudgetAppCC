@@ -29,6 +29,8 @@ enum SettingsKey {
     static let lastBackup = "lastBackup"
     /// Accounts tab: split non-credit accounts into Bank, Top-up and Cash. Off shows one "Money" list.
     static let groupAccountsByType = "groupAccountsByType"
+    /// Blank the amounts in widgets while the iPhone is locked (off by default).
+    static let hideWidgetAmounts = "hideWidgetAmounts"
 
     static let defaultPartnerName = "Girlfriend"
 }
@@ -132,9 +134,31 @@ enum Maintenance {
             perDay: pace.perDay,
             paceStatus: status,
             alert: alert,
-            nextBill: bill
+            nextBill: bill,
+            accounts: WidgetAccounts.snapshots(ledger: ledger, now: now),
+            hideWhenLocked: UserDefaults.standard.bool(forKey: SettingsKey.hideWidgetAmounts)
         ).save()
         WidgetCenter.shared.reloadAllTimelines()
+    }
+}
+
+/// The accounts the Balances widget can show: every account that tracks a balance, in the app's account
+/// order, each with the number the Accounts tab shows for it.
+enum WidgetAccounts {
+    static func snapshots(ledger: Ledger, now: Date = Date()) -> [AccountSnapshot] {
+        AccountLayout.sorted(ledger.accounts.filter(\.tracksBalance)).map { account in
+            let balance = ledger.balance(of: account, before: now)
+            let credit = account.kind == .credit
+            return AccountSnapshot(
+                id: account.id.uuidString,
+                name: account.name,
+                symbol: AccountLook.of(account).symbol,
+                colorKey: credit ? AccountLook.cardColor(account).rawValue : AccountLook.of(account).hue.rawValue,
+                isCredit: credit,
+                amount: credit ? max(-balance, 0) : balance,
+                isArchived: account.isArchived
+            )
+        }
     }
 }
 

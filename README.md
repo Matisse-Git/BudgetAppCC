@@ -41,7 +41,11 @@ A free Apple ID allows only 3 sideloaded apps at a time and a limited number of 
 ### After installing
 
 - **Widgets:** long-press the Home Screen or Lock Screen → Edit → add the Kakeibo **Budget** widget (small, medium
-  or Lock Screen) or the **Next card bill** widget. Tapping one opens the add screen.
+  or Lock Screen), the **Next card bill** widget or the **Balances** widget (small or medium). Tapping
+  Budget or Next card bill opens the add screen.
+  - Balances shows up to four accounts. Touch and hold it → Edit Widget to choose which and in what order;
+    each widget keeps its own list. On the medium size, tapping an account opens it.
+  - Settings → "Hide widget amounts when locked" blanks the numbers while the iPhone is locked.
   The widget reads its numbers through an App Group. If it only ever shows placeholder numbers, the installer
   didn't keep the App Group when re-signing; the app itself is unaffected.
 - **Control Center / Action Button:** add the "Log Expense" control.
@@ -73,6 +77,6 @@ Layout:
 - `Kakeibo/Views`: SwiftUI screens, built on the shared components in `DesignComponents.swift`.
 - `Shared/DesignTokens.swift`: colours, type and sizes from the design canvas (see CLAUDE.md).
 - `Kakeibo/Intents`: the Log Payment intent and Siri/Shortcuts phrases.
-- `KakeiboWidget`: the Home/Lock Screen widget and the Control Center button.
+- `KakeiboWidget`: the Home/Lock Screen widgets and the Control Center button.
 - `Shared`: code compiled into both the app and the widget.
 - `KakeiboTests`: unit tests.

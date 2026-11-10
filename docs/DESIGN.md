@@ -156,6 +156,28 @@ These decisions were agreed before any code was written. Update this file when a
   - It's marked "to review". It's ready for a Wallet transaction automation, which hasn't been tested on
     Japanese cards (iD/QUICPay may not pass the merchant).
 
+## Widgets
+
+- Three Home Screen widgets: **Budget** (small, medium, Lock Screen), **Next card bill** (small) and
+  **Balances** (small, medium). The widget process can't open the database, so everything they show comes
+  from the `WidgetSnapshot` the app writes after every save and whenever it opens. Balances are therefore
+  as of the last time the app saved or was opened: a future-dated entry or automatic payoff whose date
+  arrives while the app is closed shows up the next time it opens.
+- **Balances** is a glance at a few accounts, not an overview: at most four, no total.
+  - Accounts are chosen per widget (touch and hold → Edit Widget), in the order they're dragged into
+    there, so two widgets can show different groups. Any account that tracks a balance can be chosen,
+    credit cards included; top-ups that count as spending have no balance to show.
+  - A widget that was never edited shows the first four accounts in the app's order. Once edited, the
+    list is explicit: new accounts stay out until added. Archived and deleted accounts drop out without
+    another taking their place; an unarchived one comes back. An emptied list says "Choose accounts".
+  - Each account shows its symbol (or card colour), name and the full amount, never the short form; the
+    name truncates first. Cards show what's owed as a positive number, as on the Accounts tab; a negative
+    bank or cash balance is red. With fewer than four accounts the rest grow to fill the widget.
+  - Medium: each account opens its own page (`kakeibo://account/<id>`). Small widgets get one tap target
+    from iOS, so it opens the Accounts tab (`kakeibo://accounts`).
+- Settings → "Hide widget amounts when locked" (off by default) marks the amounts in all three widgets
+  privacy-sensitive, so iOS blanks them while the iPhone is locked.
+
 ## Haptics
 
 Used often but never on plain navigation, scrolling or opening a sheet. iOS's System Haptics switch turns
@@ -178,7 +200,7 @@ soft, low-intensity ones were too faint to feel). Generators are kept warm (`Hap
 - Settings offers a JSON backup ("Back Up Now", with the date of the last one), restore, and a CSV export of
   transactions, all via the share sheet or Files. Backups aren't encrypted yet.
 - Optional Face ID (or passcode) lock when the app opens or comes back; a cover hides amounts in the app
-  switcher (on by default).
+  switcher (on by default). Widget amounts can be hidden while the iPhone is locked (off by default).
 - The schema is CloudKit-compatible: every field has a default, nothing is marked unique, and links are
   UUIDs rather than relationships.
 

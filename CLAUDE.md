@@ -6,6 +6,11 @@ The visual spec is the Claude Design canvas "Kakeibo"
 (https://claude.ai/code/artifact/c43604f3-7918-4c6f-bac6-0f1cb6e49855). Treat its HTML as a visual and
 behavioural spec, not code to port.
 
+## Branches
+
+Work on `main` and push to `main`. Don't create feature branches or work on an existing one: they fall
+behind `main` and work ends up built on stale code. Pull `main` before starting.
+
 ## Building and testing
 
 - There is no Mac. CI (`.github/workflows/ci.yml`, macOS runner) generates the project with XcodeGen,
