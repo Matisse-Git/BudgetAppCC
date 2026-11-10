@@ -14,10 +14,11 @@ behind `main` and work ends up built on stale code. Pull `main` before starting.
 ## Building and testing
 
 - There is no Mac. CI (`.github/workflows/ci.yml`, macOS runner) generates the project with XcodeGen,
-  runs `KakeiboTests` in the simulator, screenshots every screen in demo mode and builds the IPA.
+  runs `KakeiboTests` in the simulator and builds the IPA.
   Push, then read the CI run: it is the compiler. Cloud sessions have no Swift toolchain.
 - Demo mode: launch with `-demo -screen <name>` (`Kakeibo/App/DemoMode.swift`); `scripts/screenshots.sh`
-  lists the screens. Add new screens there so CI screenshots them.
+  can screenshot each screen, but CI doesn't run it: it added 8–10 minutes and the screenshots weren't
+  looked at. Don't add it back to CI or run it unless asked.
 - New source files are picked up automatically (`project.yml` lists folders, not files). `Shared/` is
   compiled into both the app and the widget.
 

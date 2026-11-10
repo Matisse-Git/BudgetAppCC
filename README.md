@@ -27,7 +27,7 @@ every 7 days.
 2. In iLoader, choose the option to install an IPA and pick `Kakeibo.ipa`.
 
 Installing a new build over the old one **keeps all your data**, as long as it's signed with the same
-Apple ID (same bundle ID, same app). The CI run also has a **screenshots** artifact showing every screen with demo data.
+Apple ID (same bundle ID, same app).
 
 ### Every 7 days
 
@@ -64,8 +64,7 @@ open Kakeibo.xcodeproj
 ```
 
 You don't need a Mac for this: CI (`.github/workflows/ci.yml`) generates the project, runs the unit tests in
-the iOS simulator, screenshots every screen in demo mode (`scripts/screenshots.sh`, `Kakeibo/App/DemoMode.swift`),
-and builds `Kakeibo.ipa` with `scripts/build-ipa.sh` on every push.
+the iOS simulator and builds `Kakeibo.ipa` with `scripts/build-ipa.sh` on every push.
 
 Layout:
 

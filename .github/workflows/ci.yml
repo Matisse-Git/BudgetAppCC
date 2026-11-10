@@ -56,16 +56,6 @@ jobs:
           if [ $status -ne 0 ]; then tail -n 80 test.log; fi
           exit $status
 
-      - name: Screenshots (demo data)
-        run: ./scripts/screenshots.sh "${{ steps.sim.outputs.udid }}"
-
-      - name: Upload screenshots
-        uses: actions/upload-artifact@v4
-        with:
-          name: screenshots
-          path: screenshots/
-          retention-days: 30
-
       - name: Build IPA for AltStore
         run: ./scripts/build-ipa.sh
 
@@ -83,6 +73,5 @@ jobs:
           name: logs
           path: |
             test.log
-            simbuild.log
             build/build-ipa.log
           retention-days: 7
