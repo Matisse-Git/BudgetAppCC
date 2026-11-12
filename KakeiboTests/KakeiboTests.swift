@@ -427,10 +427,11 @@ final class PaceTests: XCTestCase {
     func testTotalsPaceAndComparison() {
         let pace = BudgetPace(ledger: ledger(), month: day(2026, 11, 18), now: day(2026, 11, 18))
         XCTAssertEqual(pace.budget, 169_000)
-        XCTAssertEqual(pace.spent, 154_660)
+        XCTAssertEqual(pace.spent, 144_820, "Utilities has no budget, so it isn't counted against the budget")
+        XCTAssertEqual(pace.outsideBudgets, 9_840)
         XCTAssertEqual(pace.pace, 101_400)
         XCTAssertEqual(pace.status, .atRisk)
-        XCTAssertEqual(pace.perDay, 1_195)
+        XCTAssertEqual(pace.perDay, 2_015)
         XCTAssertEqual(pace.previousSameDays, 24_300)
         XCTAssertEqual(pace.comparisonLabel(), "\(day(2026, 10, 1).formatted(.dateTime.month(.abbreviated))) 1–18")
 
@@ -452,10 +453,51 @@ final class PaceTests: XCTestCase {
         XCTAssertEqual(trends.average.count, 31)
         XCTAssertEqual(trends.average.last, 31_200)
         XCTAssertEqual(trends.averageMonthly, 31_200)
-        XCTAssertEqual(trends.projected, 154_660 * 30 / 18)
+        XCTAssertEqual(trends.projected, 154_660 * 30 / 18, "Trends counts everything, unbudgeted Utilities included")
         XCTAssertEqual(trends.kept, 300_000 - 31_200)
         XCTAssertEqual(trends.categoryChanges.first?.category.name, "Dining Out", "Ascending: +¥2,500 is the smallest change")
         XCTAssertEqual(trends.categoryChanges.last?.category.name, "Rent")
+    }
+
+    func testUnbudgetedFixedCostsDontPushTheBudgetOver() {
+        let bank = Account(name: "Bank", kind: .bank)
+        let dining = BudgetCategory(name: "Dining Out", emoji: "", kind: .expense, sortOrder: 0, monthlyBudget: 30_000)
+        let rent = BudgetCategory(name: "Rent", emoji: "", kind: .expense, sortOrder: 1)
+        let entries = [
+            Entry(kind: .expense, amount: 10_000, date: day(2026, 11, 5), accountID: bank.id, categoryID: dining.id),
+            Entry(kind: .expense, amount: 85_000, date: day(2026, 11, 1), accountID: bank.id, categoryID: rent.id),
+            // Last month's rent fell inside the comparison days; it mustn't skew "vs October".
+            Entry(kind: .expense, amount: 85_000, date: day(2026, 10, 2), accountID: bank.id, categoryID: rent.id),
+            Entry(kind: .expense, amount: 12_000, date: day(2026, 10, 8), accountID: bank.id, categoryID: dining.id),
+        ]
+        let ledger = Ledger(accounts: [bank], categories: [dining, rent], entries: entries)
+        let pace = BudgetPace(ledger: ledger, month: day(2026, 11, 15), now: day(2026, 11, 15))
+
+        XCTAssertEqual(pace.spent, 10_000)
+        XCTAssertEqual(pace.left, 20_000, "Rent doesn't make the month look over budget")
+        XCTAssertEqual(pace.status, .onTrack)
+        XCTAssertEqual(pace.outsideBudgets, 85_000)
+        XCTAssertEqual(pace.previousSameDays, 12_000)
+        XCTAssertEqual(pace.vsPrevious, -2_000)
+        XCTAssertEqual(pace.unbudgeted.map(\.category.name), ["Rent"])
+        XCTAssertEqual(ledger.totalSpending(in: pace.interval), 95_000, "Spending totals still include rent")
+    }
+
+    func testWithoutBudgetsEverythingCounts() {
+        let bank = Account(name: "Bank", kind: .bank)
+        let rent = BudgetCategory(name: "Rent", emoji: "", kind: .expense, sortOrder: 0)
+        let food = BudgetCategory(name: "Food", emoji: "", kind: .expense, sortOrder: 1)
+        let entries = [
+            Entry(kind: .expense, amount: 85_000, date: day(2026, 11, 1), accountID: bank.id, categoryID: rent.id),
+            Entry(kind: .expense, amount: 3_000, date: day(2026, 11, 4), accountID: bank.id, categoryID: food.id),
+            Entry(kind: .expense, amount: 2_000, date: day(2026, 10, 4), accountID: bank.id, categoryID: food.id),
+        ]
+        let pace = BudgetPace(ledger: Ledger(accounts: [bank], categories: [rent, food], entries: entries),
+                              month: day(2026, 11, 15), now: day(2026, 11, 15))
+        XCTAssertEqual(pace.budget, 0)
+        XCTAssertEqual(pace.spent, 88_000)
+        XCTAssertEqual(pace.outsideBudgets, 0)
+        XCTAssertEqual(pace.previousSameDays, 2_000)
     }
 
     func testCategoryPaceStatus() {

@@ -132,8 +132,13 @@ These decisions were agreed before any code was written. Update this file when a
 - Each category can have one fixed monthly budget (optional). Unspent budget doesn't roll over.
 - The **Budgets** tab sorts categories with a budget by attention (see Budget pace below) and lists
   categories without one, with their spending this month, under **No budget set** (archived categories
-  included when they have spending). Totals, the split bar and trends always include all spending.
-  Settings → Categories & budgets lists every category.
+  included when they have spending). Settings → Categories & budgets lists every category.
+- **Only budgeted categories count against the budget.** A category without a budget (rent and other
+  fixed costs, where a budget changes nothing) is left out of the budget summary: left/over, pace, status,
+  ¥/day, "Spent", the split bar, the comparison with last month and the Budget widget. The cards show
+  "+ ¥85,000 outside budgets" so nothing silently disappears. Anything that should count gets a budget;
+  there's no separate "fixed cost" switch. With no budgets at all, everything counts as before. Trends,
+  category pages, Activity and balances always include all spending.
 - Categories can be renamed, reordered and given an emoji (shown when no SF Symbol matches the name).
   They are archived, never deleted.
 - Months are calendar months. The start day is stored as a setting (`monthStartDay`) for later.

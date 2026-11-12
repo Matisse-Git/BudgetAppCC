@@ -103,7 +103,9 @@ struct ThisMonthBudgets: View {
                 }
             }
             .padding(.top, 10)
-            Text("Still counted in spending and trends. Tap Edit to give any category a budget.")
+            Text(pace.budget > 0
+                 ? "Not counted in your budget. Still in trends and balances."
+                 : "Still counted in spending and trends. Tap Edit to give any category a budget.")
                 .font(.footnote)
                 .foregroundStyle(Palette.textSecondary)
                 .padding(.horizontal, 16)
@@ -167,6 +169,10 @@ struct ThisMonthBudgets: View {
                      color: pace.previousSameDays == 0 ? Palette.textPrimary : (pace.vsPrevious <= 0 ? Palette.positive : Palette.warning))
             }
             .padding(.top, 12)
+            if pace.outsideBudgets > 0 {
+                OutsideBudgetsLine(amount: pace.outsideBudgets)
+                    .padding(.top, 6)
+            }
             if pace.budget > 0 && pace.isCurrentMonth {
                 statusChip
                     .padding(.top, 14)
@@ -237,6 +243,19 @@ struct ThisMonthBudgets: View {
     }
 }
 
+/// "+ ¥85,000 outside budgets": spending in categories without a budget, left out of the budget totals.
+struct OutsideBudgetsLine: View {
+    let amount: Int
+
+    var body: some View {
+        Text("+ \(Yen.format(amount)) outside budgets")
+            .font(.footnote)
+            .foregroundStyle(Palette.textSecondary)
+            .monospacedDigit()
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 /// This month's spending split by category on one bar, scaled to the whole budget, with today's pace.
 struct SplitBar: View {
     let pace: BudgetPace
@@ -248,8 +267,11 @@ struct SplitBar: View {
     }
 
     var body: some View {
-        let segments = (pace.needsAttention + pace.onTrack).map { Segment(id: $0.id, value: $0.spent, color: CategoryLook.of($0.category).tint) }
-            + pace.unbudgeted.map { Segment(id: $0.category.id, value: $0.spent, color: CategoryLook.of($0.category).tint) }
+        // With budgets set, only budgeted categories fill the bar; without any, everything does.
+        let budgetedSegments = (pace.needsAttention + pace.onTrack).map { Segment(id: $0.id, value: $0.spent, color: CategoryLook.of($0.category).tint) }
+        let looseSegments: [Segment] = pace.budget > 0 ? []
+            : pace.unbudgeted.map { Segment(id: $0.category.id, value: $0.spent, color: CategoryLook.of($0.category).tint) }
+        let segments = budgetedSegments + looseSegments
         let shown = segments.filter { $0.value > 0 }.sorted { $0.value > $1.value }
         let scale = Double(max(pace.budget, pace.spent, 1))
         let tick: Double? = pace.isCurrentMonth && pace.budget > 0 ? pace.paceFraction : nil

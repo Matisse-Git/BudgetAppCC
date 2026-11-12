@@ -363,6 +363,10 @@ struct BudgetHeroCard: View {
             PaceStatusChip(status: pace.status)
         }
         .padding(.top, 8)
+        if pace.outsideBudgets > 0 {
+            OutsideBudgetsLine(amount: pace.outsideBudgets)
+                .padding(.top, 2)
+        }
         if pace.previousSameDays > 0 {
             ComparisonLine(delta: pace.vsPrevious, label: pace.comparisonLabel())
                 .padding(.top, 6)

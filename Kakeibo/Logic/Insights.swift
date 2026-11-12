@@ -144,7 +144,8 @@ struct SpendingTrends {
         previous = summary.previous
         months = totals
         averageMonthly = past.isEmpty ? 0 : past.reduce(0) { $0 + $1.spent } / past.count
-        projected = pace.projected
+        // Trends is the whole cash picture: fixed costs without a budget count here.
+        projected = pace.daysElapsed > 0 ? summary.spent * pace.daysInMonth / pace.daysElapsed : summary.spent
         daysInMonth = summary.daysInMonth
         categoryChanges = (pace.needsAttention + pace.onTrack)
             .filter { $0.vsPrevious != 0 }
@@ -238,10 +239,15 @@ struct BudgetPace {
     let daysElapsed: Int
     let isCurrentMonth: Bool
     let budget: Int
+    /// Spending in budgeted categories. Categories without a budget (rent and other fixed costs) aren't
+    /// part of the budget, so they don't count against it; with no budgets at all, everything counts.
     let spent: Int
+    /// Spending in categories without a budget, left out of `spent` ("+ ¥85,000 outside budgets").
+    /// Zero when there are no budgets at all.
+    let outsideBudgets: Int
     /// budget × days elapsed ÷ days in the month.
     let pace: Int
-    /// Spending in the month before over the same days.
+    /// Spending in the month before over the same days, counted the same way as `spent`.
     let previousSameDays: Int
     /// Last day of the month before that the comparison covers (Oct 18 for Nov 18).
     let previousComparisonEnd: Date
@@ -250,7 +256,8 @@ struct BudgetPace {
     let needsAttention: [CategoryPace]
     /// The rest of the budgeted categories, fullest first.
     let onTrack: [CategoryPace]
-    /// Categories with spending but no budget, biggest first. Still counted in `spent`.
+    /// Categories with spending but no budget, biggest first. Counted in `outsideBudgets`, not `spent`,
+    /// unless there are no budgets at all.
     let unbudgeted: [(category: BudgetCategory, spent: Int)]
 
     init(ledger: Ledger, month: Date, now: Date = Date(), calendar: Calendar = .kakeibo) {
@@ -289,14 +296,20 @@ struct BudgetPace {
         loose.sort { $0.spent > $1.spent }
 
         let totalBudget = ledger.totalBudget
+        let hasBudgets = totalBudget > 0
+        let allSpent = spending.values.reduce(0, +)
+        let budgetedSpent = budgetedIDs.reduce(0) { $0 + (spending[$1] ?? 0) }
+        let previousAll = previousSpending.values.reduce(0, +)
+        let previousBudgeted = budgetedIDs.reduce(0) { $0 + (previousSpending[$1] ?? 0) }
         self.interval = interval
         daysInMonth = days
         daysElapsed = elapsed
         isCurrentMonth = current
         budget = totalBudget
-        spent = spending.values.reduce(0, +)
+        spent = hasBudgets ? budgetedSpent : allSpent
+        outsideBudgets = hasBudgets ? allSpent - budgetedSpent : 0
         pace = totalBudget * elapsed / max(days, 1)
-        previousSameDays = previousSpending.values.reduce(0, +)
+        previousSameDays = hasBudgets ? previousBudgeted : previousAll
         previousComparisonEnd = calendar.date(byAdding: .day, value: -1, to: previousEnd) ?? previousEnd
         self.previousStart = previousStart
         needsAttention = over + atRisk
@@ -347,7 +360,7 @@ struct BudgetPace {
         return left / max(daysRemaining, 1)
     }
 
-    /// Month-end total at this month's daily rate.
+    /// Month-end budgeted spending at this month's daily rate.
     var projected: Int { daysElapsed > 0 ? spent * daysInMonth / daysElapsed : spent }
 
     /// "Oct 1–18" (or "October" for a whole month).
