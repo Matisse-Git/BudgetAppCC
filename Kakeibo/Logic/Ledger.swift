@@ -49,7 +49,7 @@ struct Ledger {
             if entry.accountID == accountID { delta += entry.amount }
         case .transfer, .payoff:
             if entry.accountID == accountID { delta -= entry.amount }
-            if entry.toAccountID == accountID { delta += entry.amount }
+            if entry.toAccountID == accountID { delta += entry.received }
         }
         return delta
     }
@@ -109,13 +109,15 @@ struct Ledger {
     // MARK: Spending
 
     /// My spending per category. Partner shares, transfers and payoffs are excluded;
-    /// refunds reduce spending; top-ups into "counts as spending" accounts (PASMO) count.
+    /// refunds reduce spending; top-ups into "counts as spending" accounts (PASMO) count, and so do
+    /// transfer fees (in "Bank fees").
     func spendingByCategory(in interval: DateInterval) -> [UUID: Int] {
         var topUpCategory: [UUID: UUID] = [:]
         for account in accounts where account.kind == .topUp && account.countsTopUpAsSpending {
             if let categoryID = account.topUpCategoryID { topUpCategory[account.id] = categoryID }
         }
         var result: [UUID: Int] = [:]
+        let bankFees = bankFeesCategoryID
         for entry in entries where isIn(entry, interval) {
             switch entry.kind {
             case .expense:
@@ -126,7 +128,10 @@ struct Ledger {
                 result[categoryID, default: 0] += value
             case .transfer:
                 if let to = entry.toAccountID, let categoryID = topUpCategory[to] {
-                    result[categoryID, default: 0] += entry.amount
+                    result[categoryID, default: 0] += entry.received
+                }
+                if entry.feePaid > 0, let bankFees {
+                    result[bankFees, default: 0] += entry.feePaid
                 }
             default:
                 continue
@@ -152,6 +157,27 @@ struct Ledger {
     }
 
     static let cardFeesName = "Card fees"
+
+    /// The category transfer fees count in ("Bank fees", created when first needed).
+    var bankFeesCategoryID: UUID? {
+        categories.first { $0.kind == .expense && $0.name.lowercased() == Ledger.bankFeesName.lowercased() }?.id
+    }
+
+    static let bankFeesName = "Bank fees"
+
+    /// Transfers that paid a fee in `interval`, newest first: what "Bank fees" lists.
+    func feeTransfers(in interval: DateInterval) -> [Entry] {
+        entries.filter { $0.feePaid > 0 && isIn($0, interval) }.sorted { $0.date > $1.date }
+    }
+
+    /// The last fee and how it was entered for transfers from `from` to `to`, for the editor's suggestion.
+    func lastTransferFee(from: UUID?, to: UUID?, excluding id: UUID? = nil) -> (fee: Int, onTop: Bool)? {
+        guard let from, let to else { return nil }
+        let last = entries
+            .filter { $0.kind == .transfer && $0.accountID == from && $0.toAccountID == to && $0.feePaid > 0 && $0.id != id }
+            .max { ($0.date, $0.createdAt) < ($1.date, $1.createdAt) }
+        return last.map { (fee: $0.feePaid, onTop: $0.transferFeeOnTop) }
+    }
 
     func totalSpending(in interval: DateInterval) -> Int {
         spendingByCategory(in: interval).values.reduce(0, +)

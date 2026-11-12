@@ -74,7 +74,8 @@ struct EntryPresentation {
             if entry.isRefund { parts.insert("Refund", at: 0) }
             return parts.joined(separator: " · ")
         case .transfer, .payoff:
-            return "\(accountName) → \(toAccount?.name ?? "No account")"
+            let route = "\(accountName) → \(toAccount?.name ?? "No account")"
+            return entry.feePaid > 0 ? "\(route) · \(Yen.format(entry.feePaid)) fee" : route
         case .settlement:
             return "Into \(accountName)"
         case .adjust:
@@ -182,6 +183,9 @@ struct EntryDraft: Identifiable {
     var merchant: String = ""
     /// Why this draft exists, shown above the amount ("Covers the Store Card bill on Dec 2").
     var reason: String?
+    /// Transfers: the fee, and whether `amount` is what arrives (fee on top) or what leaves (fee taken from it).
+    var transferFee: Int = 0
+    var transferFeeOnTop: Bool = false
 }
 
 extension EntryDraft {

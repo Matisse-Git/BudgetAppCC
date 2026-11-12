@@ -188,7 +188,7 @@ enum Billing {
         for entry in ledger.entries where entry.date >= cycle.closingBoundary && entry.date < cutoff {
             guard entry.toAccountID == account.id, entry.kind == .payoff || entry.kind == .transfer else { continue }
             if let entryKey = entry.billCycleKey, entryKey != key { continue }
-            paid += entry.amount
+            paid += entry.received
         }
         return max(0, owedAtClose - paid)
     }

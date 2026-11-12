@@ -64,7 +64,7 @@ These decisions were agreed before any code was written. Update this file when a
 | --- | --- | --- |
 | Expense | Yes, my share only | The full amount leaves the account. The refund flag reduces spending instead. |
 | Income | No; counted as income | Salary; Dad (iPhone share), which is a gift. |
-| Transfer | No | Between my own accounts, including top-ups. A top-up into PASMO counts as Transport. |
+| Transfer | No (its fee does) | Between my own accounts, including top-ups and cash withdrawals. A top-up into PASMO counts as Transport. An optional fee (ATM, bank transfer) counts in **Bank fees**. |
 | Card payoff | No | Bank → credit card. Has a **Confirmed** tick; unconfirmed payoffs still move money. |
 | Repayment (settlement) | No, and not income | Partner pays me back. Increases the receiving account. |
 | Balance adjustment | No | Signed correction. |
@@ -153,6 +153,16 @@ These decisions were agreed before any code was written. Update this file when a
   app for a few seconds (never a dialog). The canvas kept the sheet open for logging several in a row; in
   use, closing it was wanted.
 - Transfer shows each account's balance before and after, with a swap button.
+- **Transfer fees** (ATM withdrawals, bank transfers). Under the From/To card, **+ Fee** opens a fee field
+  and a choice: **Taken from amount** (¥10,000 leaves, ¥9,780 arrives) or **Added on top** (¥10,000
+  arrives, ¥10,220 leaves). Both happen in practice, so it's chosen per transfer. The entry stores what
+  leaves as its amount plus the fee (`transferFee`; `transferFeeOnTop` only decides how the editor shows it
+  again), so the destination gets `amount − fee`. The fee counts as spending in **Bank fees**, created
+  the first time a transfer pays one; that category's page lists those transfers at their fee. A transfer
+  that pays a card bill only pays off what arrives. ATM fees change with the time and day, so the fee is
+  never filled in by itself: when the same From → To route paid one before, a "¥220, like last time" chip
+  offers it, and **+ Fee** starts in that route's last mode. Rows read "Bank → Wallet · ¥220 fee"; the
+  detail shows Sent, Fee and Received; Log Again and Duplicate keep the fee.
 - Other ways in: the widgets, the Control Center control / Action Button ("Log Expense"), and the "Add
   Kakeibo Entry" shortcut.
 - **Log Payment** intent (amount, merchant, card): saves an expense in the background.
@@ -227,7 +237,7 @@ soft, low-intensity ones were too faint to feel). Generators are kept warm (`Hap
 | --- | --- |
 | Number-pad key (unless Settings › Keypad haptics is off) | Firm medium tap |
 | Key that does nothing (backspace on ¥0, digit limit) | Heavy thud |
-| Type, split, refund, account, category or date changed; month arrows; filters; toggles; Undo | Rigid tap |
+| Type, split, refund, account, category or date changed; fee added, removed or its mode changed; month arrows; filters; toggles; Undo | Rigid tap |
 | Entry saved; settle up; mark repaid; payoff confirmed or recorded; balance adjusted; backup restored | Success |
 | Entry saved but its category is now over budget (my share, entry's month) | Warning |
 | Entry deleted | Warning |

@@ -119,6 +119,9 @@ enum Backup {
         var installmentPaidOffAt: Date?
         // Added with quick entries.
         var quickEntryID: UUID?
+        // Added with transfer fees.
+        var transferFee: Int?
+        var transferFeeOnTop: Bool?
 
         init(_ e: Entry) {
             id = e.id; kindRaw = e.kindRaw; amount = e.amount; date = e.date; note = e.note; merchant = e.merchant
@@ -129,6 +132,7 @@ enum Backup {
             installmentCount = e.installmentCount; installmentModeRaw = e.installmentModeRaw
             installmentFeeOverride = e.installmentFeeOverride; installmentPaidOffAt = e.installmentPaidOffAt
             quickEntryID = e.quickEntryID
+            transferFee = e.transferFee; transferFeeOnTop = e.transferFeeOnTop
         }
 
         func make() -> Entry {
@@ -142,6 +146,8 @@ enum Backup {
             e.installmentFeeOverride = installmentFeeOverride ?? -1
             e.installmentPaidOffAt = installmentPaidOffAt
             e.quickEntryID = quickEntryID
+            e.transferFee = transferFee ?? 0
+            e.transferFeeOnTop = transferFeeOnTop ?? false
             return e
         }
     }
@@ -241,7 +247,7 @@ enum Backup {
         let entries = try context.fetch(FetchDescriptor<Entry>(sortBy: [SortDescriptor(\.date)]))
         let lookup = Lookup(accounts: accounts, categories: categories)
 
-        var lines = ["date,type,amount,my_share,partner_share,refund,account,to_account,category,merchant,note,confirmed,installments"]
+        var lines = ["date,type,amount,my_share,partner_share,refund,account,to_account,category,merchant,note,confirmed,installments,fee"]
         for e in entries {
             let fields: [String] = [
                 e.date.formatted(.iso8601.year().month().day()),
@@ -257,6 +263,7 @@ enum Backup {
                 e.note,
                 e.kind == .payoff ? (e.isConfirmed ? "yes" : "no") : "",
                 e.isInstallment ? String(e.installmentCount) : "",
+                e.feePaid > 0 ? String(e.feePaid) : "",
             ]
             lines.append(fields.map(csvEscape).joined(separator: ","))
         }

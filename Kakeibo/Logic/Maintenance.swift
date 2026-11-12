@@ -88,6 +88,9 @@ enum Maintenance {
         if let added = ensureCardFeesCategory(context, accounts: accounts, categories: categories, entries: entries) {
             allCategories.append(added)
         }
+        if let added = ensureBankFeesCategory(context, categories: allCategories, entries: entries) {
+            allCategories.append(added)
+        }
         let ledger = Ledger(accounts: accounts, categories: allCategories, entries: entries)
         let quickEntries = (try? context.fetch(FetchDescriptor<QuickEntry>())) ?? []
         QuickEntries.publish(quickEntries, entries: entries, store: .shared, now: now)
@@ -105,6 +108,18 @@ enum Maintenance {
         let ledger = Ledger(accounts: accounts, categories: categories, entries: entries)
         guard ledger.cardFeesCategoryID == nil, ledger.installmentPlans.contains(where: { $0.totalFee > 0 }) else { return nil }
         let category = BudgetCategory(name: Ledger.cardFeesName, emoji: "💳", kind: .expense,
+                                      sortOrder: (categories.map(\.sortOrder).filter { $0 < 100 }.max() ?? 0) + 1)
+        context.insert(category)
+        try? context.save()
+        return category
+    }
+
+    /// Transfer fees count as spending in "Bank fees"; the category is created the first time a transfer
+    /// pays a fee.
+    static func ensureBankFeesCategory(_ context: ModelContext, categories: [BudgetCategory], entries: [Entry]) -> BudgetCategory? {
+        let ledger = Ledger(accounts: [], categories: categories, entries: [])
+        guard ledger.bankFeesCategoryID == nil, entries.contains(where: { $0.feePaid > 0 }) else { return nil }
+        let category = BudgetCategory(name: Ledger.bankFeesName, emoji: "🏧", kind: .expense,
                                       sortOrder: (categories.map(\.sortOrder).filter { $0 < 100 }.max() ?? 0) + 1)
         context.insert(category)
         try? context.save()

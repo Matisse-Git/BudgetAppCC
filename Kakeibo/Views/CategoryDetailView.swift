@@ -24,10 +24,13 @@ struct CategoryDetailView: View {
         let budget = category.isArchived ? 0 : category.monthlyBudget
         let item = BudgetPace.categoryPace(category, spent: spent, elapsed: pace.daysElapsed, days: pace.daysInMonth, previous: 0)
         // Installment purchases that count monthly (or never) show as this month's slices instead.
-        let monthEntries = entries.filter {
+        // "Bank fees" also lists the transfers that paid a fee, counted at the fee.
+        let feeTransfers = category.id == ledger.bankFeesCategoryID ? ledger.feeTransfers(in: interval) : []
+        let expenses: [Entry] = entries.filter {
             $0.categoryID == category.id && $0.kind == .expense && $0.date >= interval.start && $0.date < interval.end
                 && !($0.isInstallment && $0.installmentMode != .all && ledger.plan(for: $0) != nil)
         }
+        let monthEntries: [Entry] = feeTransfers.isEmpty ? expenses : (expenses + feeTransfers).sorted { $0.date > $1.date }
         let slices = ledger.installmentPlans
             .filter { $0.entry.categoryID == category.id && $0.mode == .monthly }
             .flatMap { plan in
@@ -259,7 +262,7 @@ struct CategoryDetailView: View {
 
     @ViewBuilder
     private func entriesSection(_ items: [Entry], lookup: Lookup, monthName: String) -> some View {
-        let total = items.reduce(0) { $0 + ($1.isRefund ? -$1.amount : $1.myShare) }
+        let total = items.reduce(0) { $0 + CategoryEntryRow.counted($1) }
         let average = items.isEmpty ? 0 : total / items.count
         SectionCaps(title: monthName,
                     trailing: items.isEmpty ? nil : "\(items.count) \(items.count == 1 ? "entry" : "entries") · avg \(Yen.format(average))")
@@ -311,14 +314,32 @@ struct CategoryEntryRow: View {
 
     var body: some View {
         let look = EntryPresentation(entry: entry, lookup: lookup, partnerName: partnerName)
-        KRow(look.title, subtitle: "\(BillingText.day(entry.date)) · \(look.account?.name ?? "No account")") {
-            EmptyView()
-        } trailing: {
-            Text(look.amountText)
-                .font(.body.weight(.semibold))
-                .monospacedDigit()
-                .foregroundStyle(look.amountColor)
+        if entry.kind == .transfer {
+            // A transfer under "Bank fees": what it cost, and the route it took.
+            KRow(look.title, subtitle: "\(BillingText.day(entry.date)) · \(look.account?.name ?? "No account") → \(look.toAccount?.name ?? "No account")") {
+                EmptyView()
+            } trailing: {
+                Text(Yen.format(entry.feePaid))
+                    .font(.body.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(Palette.textPrimary)
+            }
+        } else {
+            KRow(look.title, subtitle: "\(BillingText.day(entry.date)) · \(look.account?.name ?? "No account")") {
+                EmptyView()
+            } trailing: {
+                Text(look.amountText)
+                    .font(.body.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(look.amountColor)
+            }
         }
+    }
+
+    /// What an entry adds to its category: my share, minus refunds; a transfer's fee.
+    static func counted(_ entry: Entry) -> Int {
+        if entry.kind == .transfer { return entry.feePaid }
+        return entry.isRefund ? -entry.amount : entry.myShare
     }
 }
 

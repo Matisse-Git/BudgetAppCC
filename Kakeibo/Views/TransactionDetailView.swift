@@ -137,6 +137,14 @@ struct TransactionDetailView: View {
                 accountRow("From", account: look.account)
                 ListDivider(inset: 16)
                 accountRow(entry.kind == .payoff ? "Card" : "To", account: look.toAccount)
+                if entry.feePaid > 0 {
+                    ListDivider(inset: 16)
+                    InfoRow(title: "Sent") { Text(Yen.format(entry.amount)).monospacedDigit() }
+                    ListDivider(inset: 16)
+                    InfoRow(title: "Fee") { Text(Yen.format(entry.feePaid)).monospacedDigit() }
+                    ListDivider(inset: 16)
+                    InfoRow(title: "Received") { Text(Yen.format(entry.received)).monospacedDigit() }
+                }
             case .settlement:
                 accountRow("Received in", account: look.account)
             case .adjust:
@@ -259,9 +267,10 @@ struct TransactionDetailView: View {
     // MARK: Actions
 
     private func logAgain() {
-        draft = EntryDraft(kind: entry.kind, amount: entry.amount, accountID: entry.accountID,
+        draft = EntryDraft(kind: entry.kind, amount: TransferAmounts.typed(for: entry), accountID: entry.accountID,
                            toAccountID: entry.kind == .transfer ? entry.toAccountID : nil,
-                           categoryID: entry.categoryID, note: entry.note, merchant: entry.merchant)
+                           categoryID: entry.categoryID, note: entry.note, merchant: entry.merchant,
+                           transferFee: entry.feePaid, transferFeeOnTop: entry.feePaid > 0 && entry.transferFeeOnTop)
     }
 
     /// What this entry counts toward its category in the month shown: the whole amount, or for an

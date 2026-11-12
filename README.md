@@ -56,6 +56,9 @@ A free Apple ID allows only 3 sideloaded apps at a time and a limited number of 
   large). A tap on the widget logs the purchase: it shows ✓ and "today ×N", and the entry lands in your
   totals the next time you open Kakeibo. If the widget stays empty after you've added quick entries, the
   App Group isn't shared (see Widgets above).
+- **Transfer fees:** when a withdrawal or transfer costs a fee, tap **+ Fee** on the transfer screen, enter it
+  and pick whether it's taken from the amount (less arrives) or added on top (more leaves). The fee counts
+  as spending in **Bank fees**.
 - **Control Center / Action Button:** add the "Log Expense" control.
 - **Shortcuts:** "Add Kakeibo Entry" opens the add screen. "Log Quick Entry" saves one of your quick entries
   without opening the app. "Log Payment" (amount, merchant, card) saves an

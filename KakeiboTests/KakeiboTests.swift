@@ -1104,3 +1104,170 @@ final class AppGroupTests: XCTestCase {
         XCTAssertEqual(AppGroup.resolve(altGroups: [], profileGroups: []), AppGroup.fallbackIdentifier)
     }
 }
+
+@MainActor
+final class TransferFeeTests: XCTestCase {
+    private func makeContainer() throws -> ModelContainer {
+        try ModelContainer(for: Account.self, BudgetCategory.self, Entry.self, QuickEntry.self,
+                           configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+    }
+
+    private let month = Ledger.monthInterval(containing: day(2026, 11, 1))
+
+    private func withdrawal(_ amounts: TransferAmounts, onTop: Bool, from bank: Account, to cash: Account) -> Entry {
+        let entry = Entry(kind: .transfer, amount: amounts.sent, date: day(2026, 11, 3), accountID: bank.id, toAccountID: cash.id)
+        entry.transferFee = amounts.fee
+        entry.transferFeeOnTop = onTop
+        return entry
+    }
+
+    func testFeeTakenFromTheAmount() {
+        let bank = Account(name: "SMBC bank", kind: .bank, openingBalance: 50_000)
+        let cash = Account(name: "Wallet", kind: .cash)
+        let fees = BudgetCategory(name: Ledger.bankFeesName, emoji: "🏧", kind: .expense, sortOrder: 9)
+        let amounts = TransferAmounts(typed: 10_000, fee: 220, onTop: false)
+        XCTAssertEqual(amounts.sent, 10_000)
+        XCTAssertEqual(amounts.received, 9_780)
+        let entry = withdrawal(amounts, onTop: false, from: bank, to: cash)
+        let ledger = Ledger(accounts: [bank, cash], categories: [fees], entries: [entry])
+
+        XCTAssertEqual(ledger.balance(of: bank), 40_000)
+        XCTAssertEqual(ledger.balance(of: cash), 9_780)
+        XCTAssertEqual(ledger.spendingByCategory(in: month), [fees.id: 220], "Only the fee is spending")
+        XCTAssertEqual(TransferAmounts.typed(for: entry), 10_000, "The editor shows what left")
+    }
+
+    func testFeeAddedOnTop() {
+        let bank = Account(name: "SMBC bank", kind: .bank, openingBalance: 50_000)
+        let cash = Account(name: "Wallet", kind: .cash)
+        let fees = BudgetCategory(name: Ledger.bankFeesName, emoji: "🏧", kind: .expense, sortOrder: 9)
+        let amounts = TransferAmounts(typed: 10_000, fee: 220, onTop: true)
+        XCTAssertEqual(amounts.sent, 10_220)
+        XCTAssertEqual(amounts.received, 10_000)
+        let entry = withdrawal(amounts, onTop: true, from: bank, to: cash)
+        let ledger = Ledger(accounts: [bank, cash], categories: [fees], entries: [entry])
+
+        XCTAssertEqual(ledger.balance(of: bank), 39_780)
+        XCTAssertEqual(ledger.balance(of: cash), 10_000)
+        XCTAssertEqual(ledger.totalSpending(in: month), 220)
+        XCTAssertEqual(TransferAmounts.typed(for: entry), 10_000, "The editor shows what arrived")
+    }
+
+    func testFeeMustLeaveSomethingToArrive() {
+        XCTAssertFalse(TransferAmounts(typed: 220, fee: 220, onTop: false).isValid)
+        XCTAssertTrue(TransferAmounts(typed: 220, fee: 220, onTop: true).isValid)
+        XCTAssertTrue(TransferAmounts(typed: 1_000, fee: 0, onTop: false).isValid)
+        XCTAssertEqual(TransferAmounts(typed: 1_000, fee: -50, onTop: true).sent, 1_000, "A negative fee counts as none")
+    }
+
+    func testOnlyTransfersPayFees() {
+        let bank = Account(name: "SMBC bank", kind: .bank, openingBalance: 50_000)
+        let card = Account(name: "Rakuten", kind: .credit)
+        let payoff = Entry(kind: .payoff, amount: 5_000, date: day(2026, 11, 3), accountID: bank.id, toAccountID: card.id)
+        payoff.transferFee = 220
+        XCTAssertEqual(payoff.feePaid, 0)
+        XCTAssertEqual(payoff.received, 5_000)
+        XCTAssertEqual(Ledger(accounts: [bank, card], entries: [payoff]).balance(of: card), 5_000)
+    }
+
+    func testPasmoTopUpCountsWhatArrivesAndTheFeeSeparately() {
+        let transport = BudgetCategory(name: "Transport", emoji: "🚃", kind: .expense, sortOrder: 0)
+        let fees = BudgetCategory(name: Ledger.bankFeesName, emoji: "🏧", kind: .expense, sortOrder: 9)
+        let bank = Account(name: "SMBC bank", kind: .bank, openingBalance: 100_000)
+        let pasmo = Account(name: "PASMO", kind: .topUp)
+        pasmo.countsTopUpAsSpending = true
+        pasmo.topUpCategoryID = transport.id
+        let charge = Entry(kind: .transfer, amount: 5_000, date: day(2026, 11, 2), accountID: bank.id, toAccountID: pasmo.id)
+        charge.transferFee = 110
+        let ledger = Ledger(accounts: [bank, pasmo], categories: [transport, fees], entries: [charge])
+
+        XCTAssertEqual(ledger.spendingByCategory(in: month), [transport.id: 4_890, fees.id: 110])
+        XCTAssertEqual(ledger.totalSpending(in: month), 5_000)
+    }
+
+    func testCardPaymentWithAFeeOnlyPaysWhatArrives() {
+        let bank = Account(name: "SMBC bank", kind: .bank, openingBalance: 100_000)
+        let card = Account(name: "Rakuten Card", kind: .credit)
+        card.closingDay = 31
+        card.paymentDay = 27
+        card.createdAt = day(2026, 10, 1)
+        let purchase = Entry(kind: .expense, amount: 10_000, date: day(2026, 11, 10), accountID: card.id)
+        let payment = Entry(kind: .transfer, amount: 10_000, date: day(2026, 12, 5), accountID: bank.id, toAccountID: card.id)
+        payment.transferFee = 220
+        let ledger = Ledger(accounts: [bank, card], entries: [purchase, payment])
+        XCTAssertEqual(Billing.status(for: card, ledger: ledger, now: day(2026, 12, 10)).due, 220)
+        XCTAssertEqual(ledger.balance(of: card), -220)
+    }
+
+    func testLastFeeIsSuggestedPerRoute() throws {
+        let bank = Account(name: "SMBC bank", kind: .bank)
+        let cash = Account(name: "Wallet", kind: .cash)
+        let revolut = Account(name: "Revolut", kind: .topUp)
+        let older = Entry(kind: .transfer, amount: 10_000, date: day(2026, 11, 1), accountID: bank.id, toAccountID: cash.id)
+        older.transferFee = 110
+        let newer = Entry(kind: .transfer, amount: 20_220, date: day(2026, 11, 8), accountID: bank.id, toAccountID: cash.id)
+        newer.transferFee = 220
+        newer.transferFeeOnTop = true
+        let free = Entry(kind: .transfer, amount: 5_000, date: day(2026, 11, 9), accountID: bank.id, toAccountID: cash.id)
+        let other = Entry(kind: .transfer, amount: 5_000, date: day(2026, 11, 10), accountID: bank.id, toAccountID: revolut.id)
+        other.transferFee = 330
+        let ledger = Ledger(accounts: [bank, cash, revolut], entries: [older, newer, free, other])
+
+        let last = try XCTUnwrap(ledger.lastTransferFee(from: bank.id, to: cash.id))
+        XCTAssertEqual(last.fee, 220, "The latest transfer that paid a fee")
+        XCTAssertTrue(last.onTop)
+        XCTAssertEqual(ledger.lastTransferFee(from: bank.id, to: cash.id, excluding: newer.id)?.fee, 110)
+        XCTAssertNil(ledger.lastTransferFee(from: cash.id, to: bank.id), "Each direction is its own route")
+        XCTAssertEqual(ledger.feeTransfers(in: month).map(\.id), [other.id, newer.id, older.id])
+    }
+
+    func testBankFeesCategoryIsCreatedOnFirstFee() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let bank = Account(name: "SMBC bank", kind: .bank)
+        let cash = Account(name: "Wallet", kind: .cash)
+        let free = Entry(kind: .transfer, amount: 10_000, date: day(2026, 11, 1), accountID: bank.id, toAccountID: cash.id)
+        XCTAssertNil(Maintenance.ensureBankFeesCategory(context, categories: [], entries: [free]))
+
+        let paid = Entry(kind: .transfer, amount: 10_000, date: day(2026, 11, 2), accountID: bank.id, toAccountID: cash.id)
+        paid.transferFee = 220
+        let created = try XCTUnwrap(Maintenance.ensureBankFeesCategory(context, categories: [], entries: [free, paid]))
+        XCTAssertEqual(created.name, Ledger.bankFeesName)
+        XCTAssertEqual(created.kind, .expense)
+        XCTAssertNil(Maintenance.ensureBankFeesCategory(context, categories: [created], entries: [free, paid]), "Only once")
+    }
+
+    func testBackupKeepsTransferFees() throws {
+        let defaults = UserDefaults(suiteName: "TransferFeeBackup-\(UUID().uuidString)")!
+        let source = try makeContainer()
+        let bank = Account(name: "SMBC bank", kind: .bank)
+        let cash = Account(name: "Wallet", kind: .cash)
+        let entry = Entry(kind: .transfer, amount: 10_220, date: day(2026, 11, 3), accountID: bank.id, toAccountID: cash.id)
+        entry.transferFee = 220
+        entry.transferFeeOnTop = true
+        source.mainContext.insert(bank)
+        source.mainContext.insert(cash)
+        source.mainContext.insert(entry)
+        try source.mainContext.save()
+        let data = try Backup.exportData(context: source.mainContext, defaults: defaults)
+
+        let target = try makeContainer()
+        try Backup.restore(from: data, into: target.mainContext, defaults: defaults)
+        let restored = try XCTUnwrap(target.mainContext.fetch(FetchDescriptor<Entry>()).first)
+        XCTAssertEqual(restored.amount, 10_220)
+        XCTAssertEqual(restored.transferFee, 220)
+        XCTAssertTrue(restored.transferFeeOnTop)
+
+        // A backup made before transfer fees existed restores them as free.
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        var entries = try XCTUnwrap(json["entries"] as? [[String: Any]])
+        entries[0].removeValue(forKey: "transferFee")
+        entries[0].removeValue(forKey: "transferFeeOnTop")
+        json["entries"] = entries
+        let older = try makeContainer()
+        try Backup.restore(from: JSONSerialization.data(withJSONObject: json), into: older.mainContext, defaults: defaults)
+        let old = try XCTUnwrap(older.mainContext.fetch(FetchDescriptor<Entry>()).first)
+        XCTAssertEqual(old.transferFee, 0)
+        XCTAssertFalse(old.transferFeeOnTop)
+    }
+}

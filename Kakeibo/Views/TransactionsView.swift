@@ -251,6 +251,8 @@ struct TransactionsView: View {
         copy.merchant = entry.merchant
         copy.isRefund = entry.isRefund
         copy.partnerShare = entry.partnerShare
+        copy.transferFee = entry.transferFee
+        copy.transferFeeOnTop = entry.transferFeeOnTop
         context.insert(copy)
         context.saveAndRefresh()
         Haptics.success()

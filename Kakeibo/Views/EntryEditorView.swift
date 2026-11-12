@@ -53,6 +53,10 @@ struct EntryEditorView: View {
     @State private var installmentCount = 0
     @State private var installmentMode: InstallmentMode = .monthly
     @State private var installmentFee = -1
+    /// Transfer fee: shown once "+ Fee" is tapped; taken from the amount, or added on top of it.
+    @State private var showingFee = false
+    @State private var transferFee = 0
+    @State private var feeOnTop = false
     @State private var settingInstallments = false
     @State private var reason: String?
     @State private var loaded = false
@@ -134,10 +138,20 @@ struct EntryEditorView: View {
         return "\(installmentCount) months · \(Yen.format(monthly))/mo · \(installmentMode.label)"
     }
 
+    /// What leaves, the fee and what arrives, for a transfer.
+    private var transfer: TransferAmounts {
+        TransferAmounts(typed: amount, fee: kind == .transfer && showingFee ? transferFee : 0, onTop: feeOnTop)
+    }
+
+    /// The last fee paid between the chosen accounts, offered as a one-tap suggestion.
+    private var lastFee: (fee: Int, onTop: Bool)? {
+        Ledger(accounts: accounts, entries: entries).lastTransferFee(from: accountID, to: toAccountID, excluding: editing?.id)
+    }
+
     private var canSave: Bool {
         guard amount > 0 else { return false }
         if kind == .transfer {
-            return accountID != nil && toAccountID != nil && accountID != toAccountID
+            return accountID != nil && toAccountID != nil && accountID != toAccountID && transfer.isValid
         }
         return categoryID != nil
     }
@@ -192,6 +206,8 @@ struct EntryEditorView: View {
         .sensoryFeedback(.firmSelection, trigger: isRefund) { _, _ in ready }
         .sensoryFeedback(.firmSelection, trigger: accountID) { _, _ in ready }
         .sensoryFeedback(.firmSelection, trigger: toAccountID) { _, _ in ready }
+        .sensoryFeedback(.firmSelection, trigger: feeOnTop) { _, _ in ready }
+        .sensoryFeedback(.firmSelection, trigger: showingFee) { _, _ in ready }
         .sensoryFeedback(.firmSelection, trigger: categoryID) { _, _ in ready }
         .sensoryFeedback(.firmSelection, trigger: quickEntryID) { _, new in ready && new != nil }
         .sensoryFeedback(.firmSelection, trigger: Calendar.kakeibo.startOfDay(for: date)) { _, _ in ready }
@@ -289,6 +305,13 @@ struct EntryEditorView: View {
                 .padding(.horizontal, 12)
                 .frame(height: 30)
                 .background(Capsule().fill(Palette.positive.opacity(0.14)))
+            } else if kind == .transfer && transfer.fee > 0 && amount > 0 {
+                Text(feeOnTop
+                     ? "\(Yen.format(transfer.sent)) leaves · \(Yen.format(transfer.fee)) fee"
+                     : "\(Yen.format(transfer.received)) arrives · \(Yen.format(transfer.fee)) fee")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(transfer.isValid ? Palette.textSecondary : Palette.negativeText)
+                    .monospacedDigit()
             } else if let installmentSummary {
                 Button {
                     if !installmentsLocked { settingInstallments = true }
@@ -329,6 +352,8 @@ struct EntryEditorView: View {
             if kind == .transfer {
                 transferCard
                     .padding(.top, 16)
+                feeSection
+                    .padding(.top, 10)
                 chips
                     .padding(.top, 14)
             } else {
@@ -500,9 +525,9 @@ struct EntryEditorView: View {
     private var transferCard: some View {
         let ledger = Ledger(accounts: accounts, entries: entries)
         return VStack(spacing: 0) {
-            transferRow("From", selection: $accountID, delta: -amount, ledger: ledger)
+            transferRow("From", selection: $accountID, delta: -transfer.sent, ledger: ledger)
             Rectangle().fill(Palette.separator).frame(height: 0.5).padding(.leading, 64)
-            transferRow("To", selection: $toAccountID, delta: amount, ledger: ledger)
+            transferRow("To", selection: $toAccountID, delta: transfer.received, ledger: ledger)
         }
         .background(RoundedRectangle(cornerRadius: Metrics.sheetGroupRadius, style: .continuous).fill(Palette.sheetRow))
         .overlay {
@@ -520,6 +545,94 @@ struct EntryEditorView: View {
             .accessibilityLabel("Swap accounts")
         }
         .padding(.horizontal, 4)
+    }
+
+    /// "+ Fee" (and last time's fee between these accounts) until a fee is added; then the fee and
+    /// whether it's taken from the amount or added on top.
+    private var feeSection: some View {
+        let suggestion = lastFee
+        return VStack(spacing: 8) {
+            if showingFee {
+                feeCard
+                if transferFee == 0, let suggestion {
+                    feeSuggestionChip(suggestion)
+                }
+            } else {
+                HStack(spacing: 8) {
+                    Button {
+                        feeOnTop = suggestion?.onTop ?? false
+                        showingFee = true
+                    } label: {
+                        feeChipLabel("Fee", symbol: "plus")
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Add a fee")
+                    if let suggestion {
+                        feeSuggestionChip(suggestion)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var feeCard: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Text("Fee")
+                    .foregroundStyle(Palette.textPrimary)
+                Spacer()
+                YenField(placeholder: "¥0", value: $transferFee)
+                    .frame(maxWidth: 140)
+                Button {
+                    removeFee()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(Palette.textTertiary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Remove fee")
+            }
+            .frame(height: 44)
+            Picker("How the fee is paid", selection: $feeOnTop) {
+                Text("Taken from amount").tag(false)
+                Text("Added on top").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .padding(.bottom, 12)
+        }
+        .font(.subheadline)
+        .padding(.horizontal, 16)
+        .background(RoundedRectangle(cornerRadius: Metrics.sheetGroupRadius, style: .continuous).fill(Palette.sheetRow))
+        .padding(.horizontal, 4)
+    }
+
+    private func feeSuggestionChip(_ suggestion: (fee: Int, onTop: Bool)) -> some View {
+        Button {
+            transferFee = suggestion.fee
+            feeOnTop = suggestion.onTop
+            showingFee = true
+        } label: {
+            feeChipLabel("\(Yen.format(suggestion.fee)), like last time", symbol: "clock.arrow.circlepath")
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func feeChipLabel(_ title: String, symbol: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: symbol).foregroundStyle(Palette.accentTint)
+            Text(title).lineLimit(1).monospacedDigit()
+        }
+        .font(.subheadline.weight(.medium))
+        .foregroundStyle(Palette.textPrimary)
+        .padding(.horizontal, 12)
+        .frame(height: 34)
+        .background(Capsule().fill(Palette.chipFill))
+    }
+
+    private func removeFee() {
+        showingFee = false
+        transferFee = 0
     }
 
     private func transferRow(_ label: String, selection: Binding<UUID?>, delta: Int, ledger: Ledger) -> some View {
@@ -608,6 +721,12 @@ struct EntryEditorView: View {
             installmentFee = entry.installmentFeeOverride
             split = SplitMode.matching(share: entry.partnerShare, amount: entry.amount)
             if split == .custom { customShare = entry.partnerShare }
+            if entry.feePaid > 0 {
+                showingFee = true
+                transferFee = entry.feePaid
+                feeOnTop = entry.transferFeeOnTop
+                amount = TransferAmounts.typed(for: entry)
+            }
             return
         }
         let start = draft ?? EntryDraft()
@@ -616,6 +735,11 @@ struct EntryEditorView: View {
         note = start.note
         merchant = start.merchant
         reason = start.reason
+        if start.kind == .transfer && start.transferFee > 0 {
+            showingFee = true
+            transferFee = start.transferFee
+            feeOnTop = start.transferFeeOnTop
+        }
         if start.kind == .transfer {
             accountID = start.accountID ?? defaultAccount(for: .expense)
             toAccountID = start.toAccountID ?? transferChoices.first { $0.id != accountID && $0.holdsMoney }?.id
@@ -670,8 +794,11 @@ struct EntryEditorView: View {
         guard canSave else { return }
         let isNew = editing == nil
         let entry = editing ?? Entry(kind: kind, amount: amount)
+        let transfer = self.transfer
         entry.kind = kind
-        entry.amount = amount
+        entry.amount = kind == .transfer ? transfer.sent : amount
+        entry.transferFee = kind == .transfer ? transfer.fee : 0
+        entry.transferFeeOnTop = kind == .transfer && transfer.fee > 0 && feeOnTop
         entry.date = date
         entry.note = note.trimmingCharacters(in: .whitespacesAndNewlines)
         entry.merchant = merchant
@@ -710,7 +837,8 @@ struct EntryEditorView: View {
     private func toastMessage(for entry: Entry) -> String {
         let name: (UUID?) -> String = { id in self.accounts.first { $0.id == id }?.name ?? "No account" }
         if entry.kind == .transfer {
-            return "Saved \(Yen.format(entry.amount)) · \(name(entry.accountID)) → \(name(entry.toAccountID))"
+            let fee = entry.feePaid > 0 ? " · \(Yen.format(entry.feePaid)) fee" : ""
+            return "Saved \(Yen.format(entry.amount)) · \(name(entry.accountID)) → \(name(entry.toAccountID))\(fee)"
         }
         let category = categories.first { $0.id == entry.categoryID }?.name ?? "Uncategorised"
         if entry.isInstallment {

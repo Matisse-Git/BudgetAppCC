@@ -27,6 +27,7 @@ struct CategoryLook {
         (["rent", "housing", "home"], "house.fill", .indigo),
         (["other", "misc", "miscellaneous", "everything else"], "square.grid.2x2.fill", .gray),
         (["card fees", "fees", "interest"], "percent", .gray),
+        (["bank fees", "atm fees", "transfer fees"], "building.columns.fill", .gray),
         // Income
         (["salary", "wages", "pay"], "yensign", .green),
         (["bonus"], "star.fill", .yellow),

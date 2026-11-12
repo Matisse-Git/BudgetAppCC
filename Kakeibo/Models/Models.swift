@@ -244,6 +244,13 @@ final class Entry {
     /// The quick entry this was logged from, for the widget's "today ×N" count.
     var quickEntryID: UUID? = nil
 
+    // Transfer fees (ATM withdrawals, bank transfers). `amount` is always what leaves the source;
+    // the destination gets `amount - transferFee` and the fee counts as spending in "Bank fees".
+    var transferFee: Int = 0
+    /// The fee was entered on top of what arrives (`amount` = typed amount + fee) rather than taken
+    /// from it. Only decides how the editor shows the transfer again.
+    var transferFeeOnTop: Bool = false
+
     init(kind: EntryKind, amount: Int, date: Date = Date(), accountID: UUID? = nil, toAccountID: UUID? = nil, categoryID: UUID? = nil) {
         self.id = UUID()
         self.kindRaw = kind.rawValue
@@ -262,6 +269,12 @@ final class Entry {
 
     /// My part of an expense.
     var myShare: Int { amount - partnerShare }
+
+    /// The fee a transfer paid; 0 for every other kind.
+    var feePaid: Int { kind == .transfer ? min(max(transferFee, 0), max(amount, 0)) : 0 }
+
+    /// What reaches the destination of a transfer or payoff: the amount less any fee.
+    var received: Int { amount - feePaid }
 
     var isSharedExpense: Bool { kind == .expense && !isRefund && partnerShare > 0 }
 
